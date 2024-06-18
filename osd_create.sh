@@ -5,15 +5,18 @@ declare -a mgt
 declare -a mdt
 declare -a ost
 
+configfile=
 dryrun=
 sshcmd=
 
 # osd(mgt, mdt, ost) info
-osd_ips=
 osd_type=
 osd_index=
-osd_dataset=
+osd_vdevs=
+osd_ips=
+
 osd_pool=
+osd_dataset=
 osd_mountpoint=
 
 errexit() {
@@ -23,10 +26,7 @@ errexit() {
 
 usage() {
 	less -F <<EOF
-${0##*/} -[F fsname] mgs_ip1[,mgs_ip2] mgs_ip1[,mgs_ip2] mgt zfsvdevs
-${0##*/} -[F fsname] mgs_ip1[,mgs_ip2] mds_ip1[,mds_ip2] mdt/index zfsvdevs
-${0##*/} -[F fsname] mgs_ip1[,mgs_ip2] oss_ip1[,oss_ip2] ost/index zfsvdevs
-NOTE: index is started from 0
+${0##*/} [-n] -f config
 EOF
 	exit 1
 }
@@ -121,16 +121,20 @@ main() {
 	done
 }
 
-while getopts "hF:n" opt; do 
+while getopts "hf:n" opt; do 
 	case $opt in
 	h)	usage;;
-	F)	fsname=$OPTARG;;
+	f)	configfile=$OPTARG;;
 	n)	dryrun=echo;;
 	*)	errexit "unknown option $opt";;
 	esac
 done
 shift $((OPTIND - 1))
 
-source ./osd.conf
+if [ -z $configfile ] || [ ! -e $configfile ]; then
+	usage
+fi
+
+source $configfile
 
 main
