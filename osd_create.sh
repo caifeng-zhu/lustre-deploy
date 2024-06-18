@@ -5,15 +5,13 @@ declare -a mgt
 declare -a mdt
 declare -a ost
 
-fsname=test1
-proto=tcp
 dryrun=
 sshcmd=
 
 # osd(mgt, mdt, ost) info
 osd_ips=
 osd_type=
-osd_indx=
+osd_index=
 osd_dataset=
 osd_pool=
 osd_mountpoint=
@@ -37,7 +35,7 @@ is_local_ip() {
 	hostname -i | grep -wq $1
 }
 
-osd_create_zpool() {
+osd_mkpool() {
 	if [ $osd_type == "ost" ]; then
 		opt_recordsz="-O recordsize=1024K"
 	else
@@ -57,7 +55,7 @@ osd_mkfs() {
 		opt_mgsnids=""
 	else
 		opt_fsname="--fsname ${fsname}"
-		opt_index="--index ${osd_indx}"
+		opt_index="--index ${osd_index}"
 		opt_mgsnids=$(printf " --mgsnode %s@$proto " ${mgs_ips[@]})
 	fi
 
@@ -79,73 +77,26 @@ osd_mount() {
 }
 
 osd_create() {
-	#first_ip=$(echo "$osd_ips" | awk '{printf $1}')
-	is_local_ip ${osd_ips[0]}|| sshcmd="ssh ${osd_ips[0]} -C"
+	osd_type=$1; shift
+	osd_index=$1; shift
+	if [ $osd_type == "mgs" ]; then
+		osd_dataset=mgt
+		osd_pool=mgtpool
+		osd_mountpoint=/var/lib/lustre/$fsname/mgt
+	else
+		osd_dataset=${osd_type}${osd_index}
+		osd_pool=${fsname}-${osd_dataset}pool
+		osd_mountpoint=/var/lib/lustre/$fsname/$osd_dataset
+	fi
 
-	osd_create_zpool
+	read -r addrs osd_vdevs <<< $*
+	read -r -a osd_ips <<< $(echo $addrs | tr ',' ' ')
+
+	osd_mkpool
 	osd_mkfs
 	osd_mount
 
 	echo ""
-}
-
-##osd_prepare() {
-##	read -r osd_type osd_indx osd_ips 
-##}
-
-create_mgt() {
-	if [ ${#mgt[*]} -ne 1 ]; then
-		errexit "only ONE mgs can be specified"
-	fi
-
-	read -r osd_ips osd_vdevs <<< ${mgt[0]}
-
-	osd_ips=$(echo $osd_ips | tr ',' ' ')
-	read -r -a osd_ips <<< "$osd_ips"
-	osd_type=mgs
-	osd_indx=0
-	osd_dataset=mgt
-	osd_pool=mgtpool
-	osd_mountpoint=/var/lib/lustre/$fsname/mgt
-	osd_create
-}
-
-create_mdts() {
-	if [ ${#mdt[*]} -lt 1 ]; then
-		errexit "at least one mdt is required"
-	fi
-
-	for ((i = 0; i < ${#mdt[*]}; i++)); do
-		read -r osd_ips osd_vdevs <<< ${mdt[i]}
-
-		osd_ips=$(echo $osd_ips | tr ',' ' ')
-		read -r -a osd_ips <<< "$osd_ips"
-		osd_type=mdt
-		osd_indx=$i
-		osd_dataset=${osd_type}${osd_indx}
-		osd_pool=${fsname}-${osd_dataset}pool
-		osd_mountpoint=/var/lib/lustre/$fsname/$osd_dataset
-		osd_create
-	done
-}
-
-create_osts() {
-	if [ ${#ost[*]} -lt 1 ]; then
-		errexit "at least one ost is required"
-	fi
-
-	for ((i = 0; i < ${#ost[*]}; i++)); do
-		read -r osd_ips osd_vdevs <<< ${ost[i]}
-
-		osd_ips=$(echo $osd_ips | tr ',' ' ')
-		read -r -a osd_ips <<< "$osd_ips"
-		osd_type=ost
-		osd_indx=$i
-		osd_dataset=${osd_type}${osd_indx}
-		osd_pool=${fsname}-${osd_dataset}pool
-		osd_mountpoint=/var/lib/lustre/$fsname/$osd_dataset
-		osd_create
-	done
 }
 
 main() {
@@ -154,11 +105,20 @@ main() {
 		errexit "mgs ips should be supplied"
 	fi
 
-	create_mgt
+	for i in ${!mgt[*]}; do
+		if [ $i -ne 0 ]; then
+			errexit "too many mgts";
+		fi
+		osd_create mgs 0 ${mgt[0]}
+	done
 
-	create_mdts
+	for i in ${!mdt[*]}; do
+		osd_create mdt $i ${mdt[i]}
+	done
 
-	create_osts
+	for i in ${!ost[*]}; do
+		osd_create ost $i ${ost[i]}
+	done
 }
 
 while getopts "hF:n" opt; do 
