@@ -6,11 +6,11 @@
 #
 nvmet_config_path="/sys/kernel/config/nvmet"
 nvmet_work_path=
-nvmet_debug=1
+nvmet_debug=0
 dryrun=
 
-declare -A nvmet_port
-declare -A nvmet_ns
+declare -a nvmet_port
+declare -a nvmet_disk
 
 debug_print() {
 	[ $nvmet_debug -ne 0 ] && printf "%*s $nvmet_work_path\n" $(($1 * 4)) $2
@@ -150,7 +150,6 @@ node_clear() {
 	nvmet_work_path=$saved_path
 }
 
-
 node_show() {
 	local saved_path=$nvmet_work_path
 	local ndtype ndname depth
@@ -234,11 +233,11 @@ node_show() {
 
 nvmet_create() {
 	nvmet_work_path=$nvmet_config_path
-	for nsid in ${!nvmet_ns[*]}; do
-		read -r pt subsys ns <<< $(echo $nsid | tr ':' ' ')
+	for i in ${!nvmet_disk[*]}; do
+		read -r devpath pt subsys ns <<< ${nvmet_disk[$i]}
 		node_create 1 PORT ports/$pt ${nvmet_port[$pt]}
 		node_create 1 SUBSYS subsystems/$subsys 0
-		node_create 1 NS subsystems/$subsys/namespaces/$ns ${nvmet_ns[$nsid]}
+		node_create 1 NS subsystems/$subsys/namespaces/$ns $devpath
 
 		$dryrun ln -s $nvmet_config_path/subsystems/$subsys \
 		    $nvmet_config_path/ports/$pt/subsystems/$subsys
