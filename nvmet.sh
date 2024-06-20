@@ -1,51 +1,24 @@
 #!/bin/bash
 
-GREEN='\033[32m'
-YELLOW='\033[33m'
-BLUE='\033[34m'
-PINK='\e[1;35m'
-RESET='\033[0m'
-CYAN='\033[36m'
-MAGENTA='\033[35m'
-WHITE='\033[37m'
-
+#TODO:
+# - debug as option
+# - config file as option
+#
 nvmet_config_path="/sys/kernel/config/nvmet"
+nvmet_work_path=
+nvmet_debug=1
 dryrun=
 
-source ./nvmet.conf
+declare -A nvmet_port
+declare -A nvmet_ns
+
+debug_print() {
+	[ $nvmet_debug -ne 0 ] && printf "%*s $nvmet_work_path\n" $(($1 * 4)) $2
+}
 
 errexit() {
 	printf "$*\n"
 	exit 1
-}
-
-dir_is_empty() {
-	return `ls -A $1 | wc -w`
-}
-
-write_file() {
-	var=$1
-	file=$2
-
-	[ -n "$dryrun" ] && $dryrun echo $var \> $file || echo $var > $file
-}
-
-component_destroy() {
-	local dir=$1
-	shift
-	local cmds=("$@")
-
-	if dir_is_empty "`pwd`/$dir"; then
-		printf "%s has been empty\n" "`pwd`/$dir"
-	else
-		spushd $dir
-
-		for cmd in "${cmds[@]}"; do
-			$cmd
-		done
-
-		spopd $dir
-	fi
 }
 
 usage() {
@@ -57,336 +30,243 @@ EOF
 	exit 1
 }
 
-show() {
-	case $1 in
-		lv0)
-			printf "+- /\n"
-			;;
-		lv1-d)
-			printf "  +-$PINK %s $RESET\n" "$2"
-			;;
-		lv1-f)
-			;;
-		lv2-d)
-			printf "  | +-  $WHITE%s$RESET" "$2"
-			;;
-		lv2-f)
-			printf "  $GREEN[ %s ]$RESET \n" "$2"
-			;;
-		lv3-d)
-			printf "  |    +-  $YELLOW%s$RESET\n" "$2"
-			;;
-		lv3-f)
-			;;
-		lv4-d)
-			printf "  |      $CYAN%s$RESET" "$2"
-			;;
-		lv4-l)
-			printf "  |      $CYAN%s$RESET\n" "$2"
-			;;
-		lv4-f)
-			printf "  $GREEN[ %s ]$RESET \n" "$2"
-			;;
+node_create() {
+	local depth ndtype ndname ndval
+	local saved_path=$nvmet_work_path
+
+	read -r depth ndtype ndname ndval  <<< $*
+	nvmet_work_path=$nvmet_work_path/$ndname
+	debug_print $depth '=>'
+
+	case $ndtype in
+	PORT)
+		if [ ! -e $nvmet_work_path ]; then
+			$dryrun mkdir $nvmet_work_path
+
+			read -r traddr trsvcid trtype <<< $ndval
+			node_create $((depth + 1)) ATTR addr_adrfam ipv4
+			node_create $((depth + 1)) ATTR addr_traddr $traddr
+			node_create $((depth + 1)) ATTR addr_trsvcid $trsvcid
+			node_create $((depth + 1)) ATTR addr_trtype $trtype
+		fi
+		;;
+
+	SUBSYS)
+		if [ ! -e $nvmet_work_path ]; then
+			$dryrun mkdir $nvmet_work_path
+			node_create $((depth + 1)) ATTR attr_allow_any_host 1
+		fi
+		;;
+
+	NS)
+		if [ ! -e $nvmet_work_path ]; then
+			$dryrun mkdir $nvmet_work_path
+
+			uuidpath=/sys/block/${ndval##*/}/uuid
+			node_create $((depth + 1)) ATTR device_path $ndval
+			if [ -e $uuidpath ]; then
+				node_create $((depth + 1)) ATTR \
+					device_uuid $(cat $uuidpath)
+			fi
+			node_create $((depth + 1)) ATTR enable 1
+		fi
+		;;
+
+	ATTR)
+		# Attriute files are created automatically as empty by the
+		# driver. Here they are set with values from user space.
+		if [ -z "$dryrun" ]; then
+			echo $ndval > $nvmet_work_path
+		else
+			printf "%*s echo %8s > %s\n" $((depth * 4)) ' ' \
+				$ndval $nvmet_work_path
+		fi
+		;;
+
+	*)
+		errexit "unknown node type: $ndtype"
+		;;
 	esac
+
+	debug_print $depth '<='
+	nvmet_work_path=$saved_path
 }
 
-srmdir() {
-	 $dryrun rmdir --ignore-fail-on-non-empty $1
+node_clear() {
+	local saved_path=$nvmet_work_path
+	local ndtype ndname depth
+
+	read -r depth ndtype ndname <<< $*
+	nvmet_work_path=$nvmet_work_path/$ndname
+	debug_print $depth '=>'
+
+	case $ndtype in
+	PORTS)
+		for p in $(ls $nvmet_work_path); do
+			node_clear $((depth + 1)) PORT ${p##*/}
+		done
+		;;
+
+	PORT)
+		node_clear $((depth + 1)) SUBSYSTEMS subsystems
+
+		$dryrun rmdir $nvmet_work_path
+		;;
+
+	SUBSYSTEMS)
+		for s in $(ls $nvmet_work_path); do
+			node_clear $((depth + 1)) SUBSYS ${s##*/}
+		done
+		;;
+
+	SUBSYS)
+		if [ -h $nvmet_work_path ]; then
+			$dryrun unlink $nvmet_work_path
+		elif [ -d $nvmet_work_path ]; then
+			node_clear $((depth + 1)) NAMESPACES namespaces
+
+			$dryrun rmdir $nvmet_work_path
+		else
+			errexit "unexpected path $nvmet_work_path"
+		fi
+		;;
+
+	NAMESPACES)
+		for n in $(ls $nvmet_work_path); do
+			node_clear $((depth + 1)) NS ${n##*/}
+		done
+		;;
+
+	NS)
+		$dryrun rmdir $nvmet_work_path
+		;;
+
+	*)
+		errexit "unknown node type $ndtype"
+		;;
+	esac
+
+	debug_print $depth '<='
+	nvmet_work_path=$saved_path
 }
 
-smkdir() {
-	mkdir -p $1
-}
 
-spushd() {
-	if [ ! -e $1 ]; then
-		smkdir $1
-	fi
+node_show() {
+	local saved_path=$nvmet_work_path
+	local ndtype ndname depth
 
-	pushd $1 > /dev/null
-}
+	read -r depth ndtype ndname <<< $*
+	nvmet_work_path=$nvmet_work_path/$ndname
 
-spopd()
-{
-	popd > /dev/null
+	debug_print $depth '=>'
+	printf "%*s" $((depth * 4)) ' '
 
-	if [ -n "$dryrun" ] && [ -n "$1" ]; then
-		rmdir `pwd`/$1 &> /dev/null && [ -n "$2" ] && rmdir `pwd`/$2 &> /dev/null
-	fi
-}
+	case $ndtype in
+	PORTS)
+		$dryrun printf "$ndname:\n"
 
-port_create() {
-	read -r port trtype traddr trsvcid adrfam <<< $*
+		local p
+		for p in $(ls $nvmet_work_path); do
+			node_show $((depth + 1)) PORT ${p##*/}
+		done
+		;;
 
-	[ -e ports/$port ] && return
+	PORT)
+		$dryrun printf "p$ndname:\n"
 
-	spushd ports/$port
+		local pa
+		for pa in addr_trtype addr_trsvcid addr_traddr addr_adrfam \
+		    param_inline_data_size; do
+			node_show $((depth + 1)) ATTR $pa
+		done
+		node_show $((depth + 1)) SUBSYSTEMS subsystems
+		;;
 
-	for var in trtype traddr trsvcid adrfam; do
-		write_file ${!var} "`pwd`/addr_$var"
-	done
+	SUBSYSTEMS)
+		$dryrun printf "$ndname:\n"
 
-	spopd ports/$port
-}
+		local s
+		for s in $(ls $nvmet_work_path); do
+			node_show $((depth + 1)) SUBSYS ${s##*/}
+		done
+		;;
 
-nvmet_create_ports() {
-	for i in ${!nvmet_port[*]}; do
-		port_create ${nvmet_port[$i]}
-	done
-}
+	SUBSYS)
+		if [ -h $nvmet_work_path ]; then
+			$dryrun printf "$ndname\n"
+		else
+			$dryrun printf "$ndname:\n"
+			node_show $((depth + 1)) ATTR attr_allow_any_host
+			node_show $((depth + 1)) NAMESPACES namespaces
+		fi
+		;;
 
-subsys_create() {
-	subnqn=$1
+	NAMESPACES)
+		$dryrun printf "$ndname:\n"
 
-	[ -e subsystems/$subnqn ] && return
+		local n
+		for n in $(ls $nvmet_work_path); do
+			node_show $((depth + 1)) NS ${n##*/}
+		done
+		;;
 
-	spushd subsystems/$subnqn
+	NS)
+		$dryrun printf "n$ndname:\n"
 
-	write_file 1 "`pwd`/attr_allow_any_host"
+		local na
+		for na in device_path device_uuid enable ana_grpid; do
+			node_show $((depth + 1)) ATTR $na
+		done
+		;;
 
-	spopd subsystems/$subnqn
-}
+	ATTR)
+		$dryrun printf "%-16s %s\n" "$ndname:" $(cat $nvmet_work_path)
+		;;
 
-namespace_create() {
-	read -r subnqn ns path uuid <<< $*
+	*)
+		errexit "unknown node type $ndtype"
+		;;
+	esac
 
-	[ -e subsystems/$subnqn/namespaces/$ns ] && return
-
-	spushd subsystems/$subnqn/namespaces/$ns
-
-	for var in path uuid; do
-		write_file ${!var} "`pwd`/device_$var"
-	done
-	write_file 1 "`pwd`/enable"
-
-	spopd "subsystems/$subnqn/namespaces/$ns" "subsystems/$subnqn"
-}
-
-link_create() {
-	read -r port subnqn <<< $*
-
-	[ -e ports/$port/subsystems/$subnqn ] && return
-
-	$dryrun ln -s `pwd`/subsystems/$subnqn `pwd`/ports/$port/subsystems/$subnqn
-}
-
-nvmet_export_device_one() {
-	read -r dev subnqn ns port uuid <<< $*
-
-	subsys_create $subnqn
-	namespace_create $subnqn $ns $dev $uuid
-	link_create $port $subnqn
-}
-
-nvmet_export_devices() {
-	for i in ${!nvmet_disk[*]}; do
-		nvmet_export_device_one ${nvmet_disk[$i]}
-	done
+	debug_print $depth '<='
+	nvmet_work_path=$saved_path
 }
 
 nvmet_create() {
-	nvmet_create_ports
-	nvmet_export_devices
-}
+	nvmet_work_path=$nvmet_config_path
+	for nsid in ${!nvmet_ns[*]}; do
+		read -r pt subsys ns <<< $(echo $nsid | tr ':' ' ')
+		node_create 1 PORT ports/$pt ${nvmet_port[$pt]}
+		node_create 1 SUBSYS subsystems/$subsys 0
+		node_create 1 NS subsystems/$subsys/namespaces/$ns ${nvmet_ns[$nsid]}
 
-link_destroy() {
-	dir_is_empty ./*/subsystems && return
-
-	for path in `pwd`/*/subsystems/*; do
-		$dryrun unlink $path
+		$dryrun ln -s $nvmet_config_path/subsystems/$subsys \
+		    $nvmet_config_path/ports/$pt/subsystems/$subsys
 	done
-}
-
-namesapce_destroy() {
-	dir_is_empty ./*/namespaces && return
-
-	for path in `pwd`/*/namespaces/*; do
-		srmdir $path
-	done
-}
-
-subsys_destroy() {
-	for path in `pwd`/*; do
-		srmdir $path
-	done
-}
-
-nvmet_clear_devices() {
-	component_destroy "ports" "link_destroy"
-	component_destroy "subsystems" "namesapce_destroy" "subsys_destroy"
-}
-
-port_destroy() {
-	for path in `pwd`/*; do
-		 srmdir $path
-	done
-}
-
-nvmet_destroy_ports() {
-	if dir_is_empty ./ports; then
-		printf "%s/ports has been empty\n" `pwd`
-	else
-		spushd ports
-
-		port_destroy
-
-		spopd ports
-	fi
 }
 
 nvmet_clear() {
-	nvmet_clear_devices
-	nvmet_destroy_ports
-}
-
-port_show_attr() {
-	read trtype < ./addr_trtype
-        read traddr < ./addr_traddr
-	read trsvcid < ./addr_trsvcid
-	read dsize < ./param_inline_data_size
-
-	show lv2-f "trtype=$trtype, traddr=$traddr, trsvcid=$trsvcid, inline_data_size=$dsize"
-}
-
-port_show_link_subsys() {
-	show lv3-d "subsystems"
-
-	for subsys in ./subsystems/*; do
-		show lv4-l "$(basename $subsys)"
-	done
-}
-
-nvmet_show_port_one() {
-	port=$1
-
-	show lv2-d "$(basename $port)"
-
-	spushd $port
-
-	port_show_attr
-	port_show_link_subsys
-
-	spopd $port
-}
-
-nvmet_show_ports() {
-	show lv1-d "ports"
-
-	dir_is_empty ./ports && return
-
-	spushd ports
-
-	for port in ./*; do
-		nvmet_show_port_one $port
-	done
-
-	spopd ports
-}
-
-subsys_show_attr() {
-	read version < ./attr_version
-	read allow_any < ./attr_allow_any_host
-	read serial < ./attr_serial
-
-	show lv2-f "version=$version, allow_any=$allow_any, serial=$serial"
-}
-
-namespace_show_attr() {
-	read path < ./device_path
-	read uuid < ./device_path
-	read grpid < ./ana_grpid
-	read enable < ./enable
-
-	enable=$( ((enable)) && echo "enable" || echo "disable" )
-
-	show lv4-f "path=$path, uuid=$uuid, grpid=$grpid, $enable"
-}
-
-subsys_show_namespace_one() {
-	ns=$1
-
-	show lv4-d "$(basename $ns)"
-
-	dir_is_empty ./$ns && return
-
-	spushd $ns
-
-	namespace_show_attr
-
-	spopd $ns
-}
-
-subsys_show_namespaces() {
-	show lv3-d "namespaces"
-
-	dir_is_empty ./namespaces && return
-
-	spushd namespaces
-
-	for ns in ./*; do
-		subsys_show_namespace_one $ns
-	done
-
-	spopd namespaces
-}
-
-nvmet_show_subsys_one() {
-	subsys=$1
-
-	show lv2-d "$(basename $subsys)"
-
-	dir_is_empty ./$(basename $subsys) && return
-
-	spushd $subsys
-
-	subsys_show_attr
-	subsys_show_namespaces
-
-	spopd $subsys
-}
-
-nvmet_show_subsystems() {
-	show lv1-d "subsystems"
-
-	dir_is_empty ./subsystems && return
-
-	spushd subsystems
-
-	for subsys in ./*; do
-		nvmet_show_subsys_one $subsys
-	done
-
-	spopd subsystems
+	nvmet_work_path=$nvmet_config_path
+	node_clear 1 PORTS ports
+	node_clear 1 SUBSYSTEMS subsystems
 }
 
 nvmet_show() {
-	show lv0
-
-	nvmet_show_ports
-	nvmet_show_subsystems
+	nvmet_work_path=$nvmet_config_path
+	node_show 1 PORTS ports
+	node_show 1 SUBSYSTEMS subsystems
 }
+
+source ./nvmet.conf
 
 if [[ $2 == "-n" || $2 == "--dryrun" ]]; then
 	dryrun=echo
 fi
 
-spushd $nvmet_config_path
 case $1 in
-	-h)
-		usage
-		;;
-	create)
-		nvmet_create
-		;;
-	clear)
-		nvmet_clear
-		;;
-	ls)
-		nvmet_show
-		;;
-	*)
-		errexit "unknow options $1"
-		;;
+	-h) 	usage;;
+	create) nvmet_create;;
+	clear) 	nvmet_clear;;
+	ls) 	nvmet_show;;
+	*) 	errexit "unknow options $1";;
 esac
-
-spopd $nvmet_config_path
