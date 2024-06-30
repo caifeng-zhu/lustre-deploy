@@ -6,7 +6,7 @@ declare -a mdt
 declare -a ost
 
 oper=create
-configfile=
+configfile="./osd.conf"
 dryrun=
 sshcmd=
 
@@ -35,21 +35,51 @@ EOF
 	exit 1
 }
 
-is_local_ip() {
-	hostname -i | grep -wq $1
+#
+# Set the pool, dataset, and mount point for the osd,
+# based on osd type and index.
+#
+osd_set_variables() {
+	osd_type=$1; shift
+	osd_index=$1; shift
+
+	read -r addrs osd_vdevs <<< $*
+	read -r -a osd_ips <<< $(echo $addrs | tr ',' ' ')
+	if [ $osd_type == "mgs" ]; then
+		osd_dataset=$osd_type
+	else
+		osd_dataset=${osd_type}${osd_index}
+	fi
+	osd_pool=${fsname}-${osd_dataset}pool
+	osd_mountpoint=/var/lib/lustre/$fsname/$osd_dataset
+
+	#
+	# Set the current command to execute locally or remotely
+	#
+	if ip addr | grep -q ${osd_ips[0]}; then
+		sshcmd=
+	else
+		sshcmd="ssh ${osd_ips[0]} -C"
+	fi
 }
 
-osd_mkpool() {
+#
+# Create an osd with the specified type, index, ips and vdevs.
+#
+osd_create() {
+	echo "osd_create $*"
+
+	osd_set_variables $*
+
+	# make zpool
 	opts=" -o multihost=on -o cachefile=none -o ashift=12 -O canmount=off"
 	if [ $osd_type == "ost" ]; then
 		opts+=" -O recordsize=1024K"
 	fi
-
 	$dryrun $sshcmd zpool create $opts $osd_pool $osd_vdevs || \
 		errexit "zpool create for $osd_type failed"
-}
 
-osd_mkfs() {
+	# make lustre zfs
 	opts=$(printf  " --servicenode %s@$proto " ${osd_ips[@]})
 	if [ $osd_type == "mgs" ]; then
 		opts+=" --$osd_type"
@@ -60,63 +90,26 @@ osd_mkfs() {
 		opts+=$(printf " --mgsnode %s@$proto " ${mgs_ips[@]})
 	fi
 	opts+=" --backfstype=zfs"
-
 	$dryrun $sshcmd mkfs.lustre $opts $osd_pool/$osd_dataset || \
 		errexit "mkfs.lustre for $osd_type failed"
-}
 
-osd_mount() {
+	# mount the newly maked fs
 	$dryrun $sshcmd mkdir -p $osd_mountpoint
 	if [ ${#osd_ips[@]} -eq 2 ]; then
 		$dryrun ssh ${osd_ips[1]} -C "partprobe; mkdir -p $osd_mountpoint"
 	fi
-
 	$dryrun $sshcmd mount -t lustre $osd_pool/$osd_dataset $osd_mountpoint
-}
-
-
-#
-# Set the pool, dataset, and mount point for the osd,
-# based on osd type and index.
-#
-osd_set_variables() {
-	if [ $osd_type == "mgs" ]; then
-		osd_dataset=mgt
-		osd_pool=mgtpool
-		osd_mountpoint=/var/lib/lustre/$fsname/mgt
-	else
-		osd_dataset=${osd_type}${osd_index}
-		osd_pool=${fsname}-${osd_dataset}pool
-		osd_mountpoint=/var/lib/lustre/$fsname/$osd_dataset
-	fi
-}
-
-#
-# Create an osd with the specified type, index, ips and vdevs.
-#
-osd_create() {
-	osd_type=$1; shift
-	osd_index=$1; shift
-	read -r addrs osd_vdevs <<< $*
-	read -r -a osd_ips <<< $(echo $addrs | tr ',' ' ')
-
-	osd_set_variables
-
-	osd_mkpool
-	osd_mkfs
-	osd_mount
 
 	echo ""
 }
 
 osd_destroy() {
-	osd_type=$1; shift
-	osd_index=$1; shift
+	echo "osd_destroy $*"
 
-	osd_set_variables
+	osd_set_variables $*
 
-	$dryrun umount $osd_mountpoint
-	$dryrun zpool destroy $osd_pool
+	$dryrun $sshcmd umount $osd_mountpoint
+	$dryrun $sshcmd zpool destroy $osd_pool
 }
 
 create_osd() {
@@ -146,15 +139,15 @@ destroy_osd() {
 		if [ $i -ne 0 ]; then
 			errexit "too many mgts";
 		fi
-		osd_destroy mgs 0
+		osd_destroy mgs 0 ${mgt[0]}
 	done
 
 	for i in ${!mdt[*]}; do
-		osd_destroy mdt $i
+		osd_destroy mdt $i ${mdt[i]}
 	done
 
 	for i in ${!ost[*]}; do
-		osd_destroy ost $i
+		osd_destroy ost $i ${ost[i]}
 	done
 }
 
