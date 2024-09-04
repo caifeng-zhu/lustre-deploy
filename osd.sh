@@ -1,6 +1,6 @@
 #!/bin/bash
 
-declare -a mgs_ips
+declare -a mgs_nids
 declare -a mgt
 declare -a mdt
 declare -a ost
@@ -16,7 +16,7 @@ osd_index=
 
 # these are used for osd creation.
 osd_vdevs=
-osd_ips=
+osd_nids=
 
 # these are set based on type and index
 osd_pool=
@@ -73,8 +73,9 @@ osd_check_env() {
 # based on osd type and index.
 #
 osd_set_variables() {
-	read -r osd_type osd_index csv_addrs osd_vdevs <<< $*
-	read -r -a osd_ips <<< $(echo $csv_addrs | tr ',' ' ')
+	read -r osd_type osd_index nidstr osd_vdevs <<< $*
+	read -r -a osd_nids <<< $(echo $nidstr | tr ':' ' ')
+
 	if [ $osd_type == "mgs" ]; then
 		osd_dataset=$osd_type
 	else
@@ -86,10 +87,11 @@ osd_set_variables() {
 	#
 	# Set the current command to execute locally or remotely
 	#
-	if ip addr | grep -q ${osd_ips[0]}; then
+	osd_ip=${osd_nids[0]%%@*}	# first one of the pair 'ip1@net1,ip2@net2'
+	if ip addr | grep -w -q $osd_ip; then
 		sshrun=
 	else
-		sshrun="ssh ${osd_ips[0]}"
+		sshrun="ssh $osd_ip"
 	fi
 }
 
@@ -100,7 +102,7 @@ osd_create() {
 	echo "osd_create $*"
 
 	osd_set_variables $*
-	osd_check_env ${osd_ips[0]}
+	#osd_check_env ${osd_ips[0]}
 
 	# make zpool
 	opts=" -o multihost=on -o cachefile=none -o ashift=12 -O canmount=off"
@@ -111,14 +113,12 @@ osd_create() {
 		errexit "zpool create for $osd_type failed"
 
 	# make lustre zfs
-	opts=$(printf  " --servicenode %s@$proto " ${osd_ips[@]})
+	opts=$(printf " --servicenode %s" ${osd_nids[@]})
 	if [ $osd_type == "mgs" ]; then
 		opts+=" --$osd_type"
 	else
-		opts+=" --$osd_type"
-		opts+=" --index ${osd_index}"
-		opts+=" --fsname ${fsname}"
-		opts+=$(printf " --mgsnode %s@$proto " ${mgs_ips[@]})
+		opts+=" --$osd_type --index $osd_index --fsname $fsname"
+		opts+=$(printf " --mgsnode %s" ${mgs_nids[@]})
 	fi
 	opts+=" --backfstype=zfs"
 	runcmd mkfs.lustre $opts $osd_pool/$osd_dataset ||
@@ -126,8 +126,9 @@ osd_create() {
 
 	# mount the newly maked fs
 	runcmd mkdir -p $osd_mountpoint
-	if [ ${#osd_ips[@]} -eq 2 ]; then
-		$dryrun ssh ${osd_ips[1]} -C "partprobe; mkdir -p $osd_mountpoint"
+	if [ ${#osd_nids[@]} -eq 2 ]; then
+		other_ip=${osd_nids[1]%%@*}
+		$dryrun ssh $other_ip -C "partprobe; mkdir -p $osd_mountpoint"
 	fi
 	runcmd mount -t lustre $osd_pool/$osd_dataset $osd_mountpoint ||
 		errexit "mount failed"
@@ -164,13 +165,9 @@ if [ ! -f $configfile ]; then
 fi
 source $configfile
 
-n=${#mgs_ips[*]}
+n=${#mgs_nids[*]}
 if [ $n -ne 1 ] && [ $n -ne 2 ]; then
 	errexit "mgs ips should be supplied"
-fi
-n=${#mgt[*]}
-if [ $n -ne 1 ]; then
-	errexit "the number of mgts should be ONE";
 fi
 
 case $oper in
