@@ -1,6 +1,7 @@
 #!/bin/bash
 
 nvmet_path="/sys/kernel/config/nvmet"
+nvmet_offload=0
 node_path=
 debug=0
 dryrun=
@@ -64,6 +65,9 @@ subsys_create() {
 
 	$dryrun nvmetcli /subsystems create $nqn
 	$dryrun nvmetcli /subsystems/$nqn set attr allow_any_host=1
+	if [ $nvmet_offload -ne 0 ]; then
+		$dryrun nvmetcli /subsystems/$nqn set attr offload=1	# XXX: enable rdma offload
+	fi
 }
 
 namespace_create() {
@@ -80,10 +84,13 @@ namespace_create() {
 
 nvmet_create() {
 	for i in ${!nvmet_disk[*]}; do
-		read -r devpath pt nqn ns <<< ${nvmet_disk[$i]}
+		read -r ctrlpath pt nqn nses <<< ${nvmet_disk[$i]}
 		port_create $pt
 		subsys_create $nqn
-		namespace_create $nqn $ns $devpath
+		for ns in $(echo $nses | tr ',' ' '); do
+			devpath=${ctrlpath}n$ns
+			namespace_create $nqn $ns $devpath
+		done
 		port_link_subsys $pt $nqn
 	done
 
