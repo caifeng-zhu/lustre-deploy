@@ -1,0 +1,16 @@
+KERNEL=="nvme*[0-9]n*[0-9]", ENV{DEVTYPE}=="disk", ATTRS{subsysnqn}=="?*", ENV{ID_SUBSYSNQN}="$attr{subsysnqn}"
+KERNEL=="nvme*[0-9]n*[0-9]", ENV{DEVTYPE}=="disk", ATTRS{model}=="?*", ENV{ID_MODEL}="$attr{model}"
+KERNEL=="nvme*[0-9]n*[0-9]", ENV{DEVTYPE}=="disk", ATTRS{address}=="?*", ENV{ID_ADDRESS}="$attr{address}"
+KERNEL=="nvme*[0-9]n*[0-9]", ENV{DEVTYPE}=="disk", ENV{ID_MODEL}=="Linux", \
+        SYMLINK+="disk/nvme/$env{ID_SUBSYSNQN}-n$attr{nsid}"
+KERNEL=="nvme*[0-9]n*[0-9]", ENV{DEVTYPE}=="disk", ENV{ID_MODEL}!="Linux", PROGRAM="/bin/hostid", \
+	SYMLINK+="disk/nvme/$result-$env{ID_ADDRESS}-n$attr{nsid}"
+
+KERNEL=="nvme*[0-9]n*[0-9]p*[0-9]", ENV{DEVTYPE}=="partition", ATTRS{subsysnqn}=="?*", ENV{ID_SUBSYSNQN}="$attr{subsysnqn}"
+KERNEL=="nvme*[0-9]n*[0-9]p*[0-9]", ENV{DEVTYPE}=="partition", ATTRS{model}=="?*", ENV{ID_MODEL}="$attr{model}"
+KERNEL=="nvme*[0-9]n*[0-9]p*[0-9]", ENV{DEVTYPE}=="partition", ATTRS{address}=="*[0-9]", ENV{ID_ADDRESS}="$attr{address}"
+KERNEL=="nvme*[0-9]n*[0-9]p*[0-9]", ENV{DEVTYPE}=="partition", ATTRS{nsid}=="*[0-9]", ENV{ID_NSID}="$attr{nsid}"
+KERNEL=="nvme*[0-9]n*[0-9]p*[0-9]", ENV{DEVTYPE}=="partition", ENV{ID_MODEL}=="Linux", \
+        SYMLINK+="disk/nvme/$env{ID_SUBSYSNQN}-n$env{ID_NSID}-part$attr{partition}"
+KERNEL=="nvme*[0-9]n*[0-9]p*[0-9]", ENV{DEVTYPE}=="partition", ENV{ID_MODEL}!="Linux", PROGRAM="/bin/hostid", \
+        SYMLINK+="disk/nvme/$result-$env{ID_ADDRESS}-n$env{ID_NSID}-part$attr{partition}"
