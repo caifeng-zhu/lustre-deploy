@@ -1,19 +1,16 @@
 #!/bin/bash
 
-nvmet_path="/sys/kernel/config/nvmet"
 nvmet_offload=0
-node_path=
+nvmet_diskdir=/dev/disk/nvme
+
 debug=0
 dryrun=
 
 config_file="./nvmet.conf"
 
 declare -a nvmet_port
-declare -a nvmet_disk
-
-debug_print() {
-	[ $debug -ne 0 ] && printf "%*s $node_path\n" $(($1 * 4)) $2
-}
+declare -a nvmet_subsys_entries
+declare -a nvmet_subsys_namespaces
 
 errexit() {
 	printf "$*\n"
@@ -83,14 +80,17 @@ namespace_create() {
 }
 
 nvmet_create() {
-	for i in ${!nvmet_disk[*]}; do
-		read -r ctrlpath pt nqn nses <<< ${nvmet_disk[$i]}
+	for i in ${!nvmet_subsys_entries[*]}; do
+		read -r bdf pt <<< ${nvmet_subsys_entries[$i]}
+
+		nqn=$(hostid)-$bdf
 		port_create $pt
 		subsys_create $nqn
-		for ns in $(echo $nses | tr ',' ' '); do
-			devpath=${ctrlpath}n$ns
-			namespace_create $nqn $ns $devpath
+
+		for ns in ${nvmet_subsys_namespaces[*]}; do
+			namespace_create $nqn $ns $nvmet_diskdir/$nqn-n$ns
 		done
+
 		port_link_subsys $pt $nqn
 	done
 
@@ -99,9 +99,9 @@ nvmet_create() {
 
 while getopts "hnd" opt; do
 	case $opt in
-	h)	usage;;
-	n)	dryrun=echo;;
-	d)	debug=1;;
+	h)	usage		;;
+	n)	dryrun=echo	;;
+	d)	debug=1		;;
 	esac
 done
 shift $((OPTIND - 1))
