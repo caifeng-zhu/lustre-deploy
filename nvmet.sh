@@ -1,16 +1,17 @@
 #!/bin/bash
 
-nvmet_offload=0
-nvmet_diskdir=/dev/disk/nvme
-
 debug=0
-dryrun=
 
 config_file="./nvmet.conf"
 
-declare -a nvmet_port
-declare -a nvmet_subsys_entries
-declare -a nvmet_subsys_namespaces
+declare -a nvmet_transports
+declare -a nvmet_subsyses
+declare -a nvmet_namespaces
+declare -A nvmet_ports
+nvmet_offload=0
+nvmet_diskdir=/dev/disk/nvme
+nvmet_idx=
+nvmet_nextport=0
 
 errexit() {
 	printf "$*\n"
@@ -30,96 +31,104 @@ EOF
 	exit 0
 }
 
-port_create() {
+nvmet_subsys_namespace_create() {
+	nqn=$1
+	ns=$2
+	devpath=$3
+
+	nvmetcli /subsystems/$nqn/namespaces create $ns
+	nvmetcli /subsystems/$nqn/namespaces/$ns set device path=$devpath
+	nvmetcli /subsystems/$nqn/namespaces/$ns enable
+}
+
+nvmet_subsys_create() {
+	nqn=$1
+
+	nvmetcli /subsystems create $nqn
+	nvmetcli /subsystems/$nqn set attr allow_any_host=1
+	if [ $nvmet_offload -ge 1 ]; then
+		# enable rdma offload
+		nvmetcli /subsystems/$nqn set attr offload=1
+	fi
+
+	# create namespaces for subsys
+	namespaces=( ${nvmet_namespaces[$nvmet_idx]} )
+	for ns in ${namespaces[@]}; do
+		devpath=$nvmet_diskdir/$nqn-n$ns
+		nvmet_subsys_namespace_create $nqn $ns $devpath
+	done
+}
+
+nvmet_port_create() {
 	pt=$1
-	read traddr trsvcid trtype <<< ${nvmet_port[$pt]}
+	transport=$2
 
-	if nvmetcli /ports/$pt ls >& /dev/null ; then
-		return
-	fi
-
-	$dryrun nvmetcli /ports create $pt
-	$dryrun nvmetcli /ports/$pt set addr traddr=$traddr
-	$dryrun nvmetcli /ports/$pt set addr trsvcid=$trsvcid
-	$dryrun nvmetcli /ports/$pt set addr trtype=$trtype
-	$dryrun nvmetcli /ports/$pt set addr adrfam=ipv4
+	read -r traddr trsvcid trtype <<< $(echo $transport | tr ':' ' ')
+	nvmetcli /ports create $pt
+	nvmetcli /ports/$pt set addr traddr=$traddr
+	nvmetcli /ports/$pt set addr trsvcid=$trsvcid
+	nvmetcli /ports/$pt set addr trtype=$trtype
+	nvmetcli /ports/$pt set addr adrfam=ipv4
 }
 
-port_link_subsys() {
-	if nvmetcli /ports/$pt/subsystems/$nqn ls >& /dev/null ; then
-		return
-	fi
+nvmet_port_add_subsys() {
+	pt=$1
+	nqn=$2
 
-	$dryrun nvmetcli /ports/$pt/subsystems create $nqn
-}
-
-subsys_create() {
-	read nqn <<< $*
-
-	if nvmetcli /subsystems/$nqn ls >& /dev/null ; then
-		return
-	fi
-
-	$dryrun nvmetcli /subsystems create $nqn
-	$dryrun nvmetcli /subsystems/$nqn set attr allow_any_host=1
-	if [ $nvmet_offload -ne 0 ]; then
-		$dryrun nvmetcli /subsystems/$nqn set attr offload=1	# XXX: enable rdma offload
-	fi
-}
-
-namespace_create() {
-	read nqn ns devpath <<< $*
-
-	if nvmetcli /subsystems/$nqn/namespaces/$ns ls >& /dev/null ; then
-		return
-	fi
-
-	$dryrun nvmetcli /subsystems/$nqn/namespaces create $ns
-	$dryrun nvmetcli /subsystems/$nqn/namespaces/$ns set device path=$devpath
-	$dryrun nvmetcli /subsystems/$nqn/namespaces/$ns enable
+	nvmetcli /ports/$pt/subsystems create $nqn
 }
 
 nvmet_create() {
-	for i in ${!nvmet_subsys_entries[*]}; do
-		read -r bdf pt <<< ${nvmet_subsys_entries[$i]}
+	ports=()
+	transports=( ${nvmet_transports[$nvmet_idx]} )
+	for transport in ${transports[@]}; do
+		nvmet_port_create $nvmet_nextport $transport
 
+		ports+=( $nvmet_nextport )
+		nvmet_nextport=$((nvmet_nextport + 1))
+	done
+
+	bdfs=( ${nvmet_subsyses[$nvmet_idx]} )
+	for bdf in ${bdfs[@]}; do
 		nqn=$(hostid)-$bdf
-		port_create $pt
-		subsys_create $nqn
+		nvmet_subsys_create $nqn
 
-		for ns in ${nvmet_subsys_namespaces[*]}; do
-			namespace_create $nqn $ns $nvmet_diskdir/$nqn-n$ns
+		for pt in ${ports[@]}; do
+			nvmet_port_add_subsys $pt $nqn
 		done
+	done
+}
 
-		port_link_subsys $pt $nqn
+nvmet_populate() {
+	for i in ${!nvmet_transports[@]}; do
+		nvmet_idx=$i
+		nvmet_create
 	done
 
 	nvmetcli / saveconfig
 }
 
-while getopts "hnd" opt; do
+while getopts "hndf:" opt; do
 	case $opt in
-	h)	usage		;;
-	n)	dryrun=echo	;;
-	d)	debug=1		;;
+	h)	usage			;;
+	n)	dryrun=echo		;;
+	f)	config_file=$OPTARG	;;
+	d)	debug=1			;;
 	esac
 done
 shift $((OPTIND - 1))
 
-case $1 in
-	create|export)
-		if [ ! -z $2 ]; then
-			config_file=$2
-		fi
-		if [ ! -e $config_file ]; then
-			errexit "invalid $config_file"
-		fi
+case "$1" in
+create|export)
+	if [ ! -e $config_file ]; then
+		errexit "invalid $config_file"
+	fi
 
-		source $config_file
-		nvmet_create
-		;;
+	source $config_file
+	nvmet_populate
+	;;
 
-	*)
-		errexit "unknow options $1"
-		;;
+*)
+	errexit "unknow options $1"
+	;;
 esac
