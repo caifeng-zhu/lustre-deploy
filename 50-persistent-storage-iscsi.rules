@@ -1,0 +1,5 @@
+KERNEL=="sd*[!0-9]", SUBSYSTEMS=="scsi", ATTRS{vendor}=="LIO-ORG", \
+        SYMLINK+="disk/iscsi/$attr{model}"
+
+KERNEL=="sd*[0-9]", SUBSYSTEMS=="scsi", ATTRS{vendor}=="LIO-ORG", \
+        SYMLINK+="disk/iscsi/$attr{model}-part$attr{partition}"
