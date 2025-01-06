@@ -4,10 +4,9 @@ debug=0
 
 config_file="./nvmet.conf"
 
-declare -a nvmet_transports
-declare -a nvmet_subsyses
-declare -a nvmet_namespaces
-declare -A nvmet_ports
+declare -a nvmet_trinfo_list
+declare -a nvmet_subsys_list
+declare -a nvmet_subsys_ns_list
 nvmet_offload=0
 nvmet_diskdir=/dev/disk/nvme
 nvmet_idx=
@@ -52,7 +51,7 @@ nvmet_subsys_create() {
 	fi
 
 	# create namespaces for subsys
-	namespaces=( ${nvmet_namespaces[$nvmet_idx]} )
+	namespaces=( ${nvmet_subsys_ns_list[$nvmet_idx]} )
 	for ns in ${namespaces[@]}; do
 		devpath=$nvmet_diskdir/$nqn-n$ns
 		nvmet_subsys_namespace_create $nqn $ns $devpath
@@ -80,7 +79,7 @@ nvmet_port_add_subsys() {
 
 nvmet_create() {
 	ports=()
-	transports=( ${nvmet_transports[$nvmet_idx]} )
+	transports=( ${nvmet_trinfo_list[$nvmet_idx]} )
 	for transport in ${transports[@]}; do
 		nvmet_port_create $nvmet_nextport $transport
 
@@ -88,7 +87,7 @@ nvmet_create() {
 		nvmet_nextport=$((nvmet_nextport + 1))
 	done
 
-	bdfs=( ${nvmet_subsyses[$nvmet_idx]} )
+	bdfs=( ${nvmet_subsys_list[$nvmet_idx]} )
 	for bdf in ${bdfs[@]}; do
 		nqn=$(hostid)-$bdf
 		nvmet_subsys_create $nqn
@@ -100,7 +99,7 @@ nvmet_create() {
 }
 
 nvmet_populate() {
-	for i in ${!nvmet_transports[@]}; do
+	for i in ${!nvmet_trinfo_list[@]}; do
 		nvmet_idx=$i
 		nvmet_create
 	done
