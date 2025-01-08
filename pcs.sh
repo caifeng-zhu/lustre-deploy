@@ -35,6 +35,13 @@ errexit() {
         exit 1
 }
 
+usage() {
+	cat <<EOF
+${0##*/} [-f config]
+EOF
+	exit 1
+}
+
 resource_zfs_create() {
 	pcs resource create $resource_name ocf:heartbeat:ZFS $zfs_pool
 }
