@@ -120,7 +120,7 @@ mdraid_create() {
 }
 
 mdraid_config() {
-	mdraid_realpath=$(realpath $mdraid_name)
+	mdraid_realpath=$(realpath /dev/md/$mdraid_name)
 	mdadm --action=frozen $mdraid_realpath
 
 	echo $1 > /sys/block/${mdraid_realpath##*/}/md/group_thread_cnt
@@ -140,6 +140,8 @@ ldiskfs_mkpart() {
 		fi
 		if [ $npart -eq 2 ]; then
 			# both partitions exist.
+			wipefs -a $disk-part1
+			wipefs -a $disk-part2
 			continue
 		fi
 
@@ -150,6 +152,26 @@ ldiskfs_mkpart() {
 		partprobe $disk
 	done
 	sleep 1	# waiting partition table to settle
+}
+
+ldiskfs_wipepart() {
+	for disk in ${ldiskfs_devices[@]}; do
+		npart=0
+		if parted -s $disk print | grep -q ${tgt}-journal; then
+			npart=$((npart + 1))
+		fi
+		if parted -s $disk print | grep -q ${tgt}-data; then
+			npart=$((npart + 1))
+		fi
+		if [ $npart -eq 2 ]; then
+			# both partitions exist.
+			wipefs -a $disk-part1
+			wipefs -a $disk-part2
+			continue
+		fi
+
+		wipefs -a $disk
+	done
 }
 
 # Create object storage device for ldiskfs. The osd must
@@ -179,12 +201,11 @@ ldiskfs_create_osd() {
 		mkfs_opts+=" "
 		mkfs_opts+="-j -J device=$jraid"
 
-		# TODO:
 		# this option is required. host reboot will change dev num
 		# recored in ldiskfs superblock. this option makes mount always
 		# find the right journal device path.
-		#mntfs_opts+=" "
-		#mntfs_opts+="journal_path=$jraid"
+		mntfs_opts+=" "
+		mntfs_opts+="journal_path=$jraid"
 	fi
 
 	mdraid_name=${tgt}-data
@@ -196,7 +217,10 @@ ldiskfs_create_osd() {
 		mdraid_create
 
 		mkfs_opts+=" "
-		mkfs_opts+="-E lazy_itable_init='1'"
+		case $tgt in
+		mdt*)	mkfs_opts+="-E lazy_itable_init='1',nodiscard"	;;
+		*)	mkfs_opts+="-E lazy_itable_init='1'"		;;
+		esac
 		tgt_mountdev=/dev/md/$mdraid_name
 		;;
 
@@ -256,6 +280,9 @@ ldiskfs_destroy_osd() {
 	[ ! -z "$jncopy" ] && \
 		mdadm --stop /dev/md/${tgt}-journal
 	mdadm --stop /dev/md/${tgt}-data
+
+	ldiskfs_devices=( ${tgt_vdev_list[$tgt_idx]} )
+	ldiskfs_wipepart
 }
 
 ldiskfs_sync_backup() {

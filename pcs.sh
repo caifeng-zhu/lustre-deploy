@@ -1,16 +1,15 @@
 #!/bin/bash
 
-ha_fsname=		# lustre file system name
-ha_csname=		# copyset name
+copyset_fsname=		# lustre file system name
+copyset_name=		# copyset name
+copyset_nodes=
+copyset_resource_types=
 
-declare -a node_list
-declare -a node_auth_list
-declare -a node_ipmi_list
-declare	   node_idx
+declare -A node_auth_table
+declare -A node_ipmi_table
+declare -A node_ltgt_table
+node_pcmk_delay=
 
-declare -a group_lustretgt_list
-declare -a group_resources_list
-declare -a group_locations_list
 declare    group_name
 
 # general resource variables
@@ -27,19 +26,11 @@ zfs_pool=
 lustre_mountdev=
 lustre_mountpoint=
 
-dryrun=
 configfile="./pcs.conf"
 
 errexit() {
         printf "$*\n"
         exit 1
-}
-
-usage() {
-	cat <<EOF
-${0##*/} [-f config]
-EOF
-	exit 1
 }
 
 resource_zfs_create() {
@@ -54,22 +45,21 @@ resource_mdraid_create() {
 resource_lustre_create() {
 	# NOTE: mountpoint path must NOT have trailing / since
 	# realpath will complain by error.
-	pcs resource create $resource_name ocf:lustre:Lustre \
+	pcs resource create $resource_name ocf:heartbeat:Lustre \
 		target=$lustre_mountdev mountpoint=$lustre_mountpoint
 }
 
 resource_group_create() {
-	idx=$1
-	tgt=$2
+	tgt=$1
+	node_active=$2
+	node_backup=$3
 
 	group_name=$tgt-group
-
-	resources=( ${group_resources_list[$idx]} )
-	for resrc in ${resources[@]}; do
-		case $resrc in
-		zpool)
-			resource_name=$tgt-zpool
-			zfs_pool=$ha_fsname-${tgt}pool
+	for rt in $copyset_resource_types; do
+		case $rt in
+		zfs)
+			resource_name=$tgt-zfs
+			zfs_pool=$copyset_fsname-${tgt}pool
 			resource_zfs_create
 
 			lustre_mountdev=$zfs_pool/$tgt
@@ -93,7 +83,7 @@ resource_group_create() {
 
 		lustre)
 			resource_name=$tgt-lustre
-			lustre_mountpoint=/var/lib/lustre/$ha_fsname/$tgt
+			lustre_mountpoint=/var/lib/lustre/$copyset_fsname/$tgt
 			resource_lustre_create
 			;;
 
@@ -105,7 +95,31 @@ resource_group_create() {
 		pcs resource group add $group_name $resource_name
 	done
 
-	pcs constraint location $group_name prefers ${group_locations_list[$idx]}
+	pcs constraint location $group_name prefers $node_active=200 $node_backup=100
+}
+
+node_add_auth() {
+	node=$1
+
+	read -r addr user pass <<< ${node_auth_table[$node]}
+	pcs host auth $1 addr=$addr -u $user -p $pass
+}
+
+node_add_groups() {
+	node=$1
+	next=$2
+	for ltgt in ${node_ltgt_table[$node]}; do
+		resource_group_create $ltgt $node $next
+	done
+}
+
+node_add_stonith() {
+	node=$1
+
+	read -r addr login pass <<< ${node_ipmi_table[$node]}
+	pcs stonith create ipmi-$node fence_ipmilan \
+		lanplus=true ip=$addr username=$login password=$pass \
+		privlvl=operator pcmk_host_list=$node $node_pcmk_delay
 }
 
 # Start pcs cluster. The setup can be handled by pcsd on cluster nodes.
@@ -115,38 +129,52 @@ resource_group_create() {
 # https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/\
 # high_availability_add-on_reference/ch-clusteradmin-haar#s2-configurestartnodes-HAAR
 #
-ha_start_cluster() {
-	# build host auth among hosts
-	for i in ${!node_name_list[@]}; do
-		node=${node_name_list[$i]}
-		read -r addr user pass <<< ${node_auth_list[$i]}
-		pcs host auth $node addr=$addr -u $user -p $pass
+copyset_start_pcs() {
+	# build auth among hosts
+	node_list=( $copyset_nodes )
+	for node in ${node_list[@]}; do
+		node_add_auth $node
 	done
 
 	# setup the cluster
-	pcs cluster setup $ha_fsname-$ha_csname ${node_name_list[@]}
+	pcs cluster setup $copyset_fsname-$copyset_name ${node_list[@]} --force
 	pcs cluster start --all
+
+	# Ignore quorum for a two node copyset
+	if [ ${#node_list[@]} -eq 2 ]; then
+		pcs property set no-quorum-policy=ignore
+	fi
 }
 
-ha_create_groups() {
-	for i in ${!group_lustretgt_list[@]}; do
-		resource_group_create $i ${group_lustretgt_list[$i]}
+copyset_create_groups() {
+	node_list=( $copyset_nodes )
+	for ((i = 0; i < ${#node_list[@]}; i++)); do
+		j=$((i+1))
+		if [ $j -eq ${#node_list[@]} ]; then
+			j=0
+		fi
+		node_add_groups ${node_list[$i]} ${node_list[$j]}
 	done
 }
 
-ha_create_stoniths() {
-	for i in ${!node_name_list[@]}; do
-		node=${node_name_list[$i]}
-		read -r addr login pass <<< ${node_ipmi_list[$i]}
-		pcs stonith create ipmi-$node fence_ipmilan \
-			lanplus=true ipaddr=$addr login=$login passwd=$pass \
-			pcmk_host_list=$node
+copyset_create_stoniths() {
+	node_list=( $copyset_nodes )
+
+	node_pcmk_delay=
+	if [ ${#node_list[@]} -eq 2 ]; then
+		# For a two node copyset, the first node is the active
+		# one and its fencing should be delayed.
+		node_pcmk_delay="pcmk_delay_base=2 pcmk_delay_max=3"
+	fi
+
+	for ((i = 0; i < ${#node_list[@]}; i++)); do
+		node_add_stonith ${node_list[$i]}
+		node_pcmk_delay=	# clear delay for all remaining nodes
 	done
 }
 
 while getopts "nf:" opt; do
         case $opt in
-        n)      dryrun=echo;;
 	f)	configfile=$OPTARG;;
 	*)	errexit "unknown option $opt";;
         esac
@@ -160,9 +188,9 @@ fi
 source $configfile
 
 main() {
-	ha_start_cluster
-	ha_create_groups
-	#ha_create_stoniths
+	copyset_start_pcs
+	copyset_create_groups
+	copyset_create_stoniths
 }
 
 main
