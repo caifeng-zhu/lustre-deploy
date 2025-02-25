@@ -30,11 +30,9 @@ iscsit_create() {
 	targetcli /iscsi create $iqn
 
 	targetcli /iscsi/$iqn/tpg1/portals delete 0.0.0.0 3260
-	portals=( ${iscsit_portals[$idx]} )
-	for addrport in ${portals[@]}; do
-		read -r addr port <<< $(echo $addrport | tr ':' ' ')
-		targetcli /iscsi/$iqn/tpg1/portals create $addr $port
-	done
+	addrport=${iscsit_portals[$idx]}
+	read -r addr port <<< $(echo $addrport | tr ':' ' ')
+	targetcli /iscsi/$iqn/tpg1/portals create $addr $port
 
 	acls=( ${iscsit_acls[$idx]} )
 	for acl in ${acls[@]}; do
