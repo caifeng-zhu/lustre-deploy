@@ -1,13 +1,13 @@
 #!/bin/bash
 
-copyset_fsname=		# lustre file system name
 copyset_name=		# copyset name
 copyset_nodes=
 copyset_resource_types=
+copyset_params=
 
 declare -A node_auth_table
 declare -A node_ipmi_table
-declare -A node_ltgt_table
+declare -A node_rtgt_table
 node_pcmk_delay=
 
 declare    group_name
@@ -34,7 +34,7 @@ errexit() {
 }
 
 resource_zfs_create() {
-	pcs resource create $resource_name ocf:heartbeat:ZFS $zfs_pool
+	pcs resource create $resource_name ocf:heartbeat:ZFS pool=$zfs_pool
 }
 
 resource_mdraid_create() {
@@ -49,6 +49,11 @@ resource_lustre_create() {
 		target=$lustre_mountdev mountpoint=$lustre_mountpoint
 }
 
+resource_ipaddr_create() {
+        pcs resource create $resource_name ocf:heartbeat:IPaddr ip=$nfs_ipaddr \
+               nic=$nfs_nic cidr_netmask=32
+}
+
 resource_group_create() {
 	tgt=$1
 	node_active=$2
@@ -57,22 +62,33 @@ resource_group_create() {
 	group_name=$tgt-group
 	for rt in $copyset_resource_types; do
 		case $rt in
-		zfs)
+		nfs_zfs)
 			resource_name=$tgt-zfs
-			zfs_pool=$copyset_fsname-${tgt}pool
+			zfs_pool=$nfs_zpool
+			resource_zfs_create
+			;;
+
+		nfs_ipaddr)
+			resource_name=$tgt-ipaddr
+			resource_ipaddr_create
+			;;
+
+		ltgt_zfs)
+			resource_name=$tgt-zfs
+			zfs_pool=$ltgt_fsname-${tgt}pool
 			resource_zfs_create
 
 			lustre_mountdev=$zfs_pool/$tgt
 			;;
 
-		mdraid_journal)
+		ltgt_journal)
 			resource_name=$tgt-journal
 			mdraid_conf=/etc/mdadm/$tgt.conf
 			mdraid_dev=/dev/md/$tgt-journal
 			resource_mdraid_create
 			;;
 
-		mdraid_data)
+		ltgt_data)
 			resource_name=$tgt-data
 			mdraid_conf=/etc/mdadm/$tgt.conf
 			mdraid_dev=/dev/md/$tgt-data
@@ -81,9 +97,9 @@ resource_group_create() {
 			lustre_mountdev=$mdraid_dev
 			;;
 
-		lustre)
+		ltgt_lustre)
 			resource_name=$tgt-lustre
-			lustre_mountpoint=/var/lib/lustre/$copyset_fsname/$tgt
+			lustre_mountpoint=/var/lib/lustre/$ltgt_fsname/$tgt
 			resource_lustre_create
 			;;
 
@@ -108,8 +124,8 @@ node_add_auth() {
 node_add_groups() {
 	node=$1
 	next=$2
-	for ltgt in ${node_ltgt_table[$node]}; do
-		resource_group_create $ltgt $node $next
+	for rtgt in ${node_rtgt_table[$node]}; do
+		resource_group_create $rtgt $node $next
 	done
 }
 
@@ -137,7 +153,7 @@ copyset_start_pcs() {
 	done
 
 	# setup the cluster
-	pcs cluster setup $copyset_fsname-$copyset_name ${node_list[@]} --force
+	pcs cluster setup $copyset_name ${node_list[@]} --force
 	pcs cluster start --all
 
 	# Ignore quorum for a two node copyset
@@ -185,7 +201,10 @@ if [ -z $configfile ] || [ ! -e $configfile ]; then
 	usage
 fi
 
+set -e
 source $configfile
+eval $copyset_params
+set +e
 
 main() {
 	copyset_start_pcs
