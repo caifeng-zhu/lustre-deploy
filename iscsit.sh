@@ -1,10 +1,10 @@
 #!/bin/bash
 
-declare -a iscsit_iqn
+iscsit_host=
+declare -a iscsit_name
 declare -a iscsit_acls
 declare -a iscsit_luns
 declare -a iscsit_portals
-declare -A device_table
 
 config_file="./iscsit.conf"
 
@@ -26,28 +26,42 @@ errexit() {
 iscsit_create() {
 	idx=$1
 
-	iqn=${iscsit_iqn[$idx]}
+	iqn="iqn.2024-04.com.ebtech.${iscsit_host}.${iscsit_name[$idx]}"
 	targetcli /iscsi create $iqn
 
 	targetcli /iscsi/$iqn/tpg1/portals delete 0.0.0.0 3260
-	addrport=${iscsit_portals[$idx]}
-	read -r addr port <<< $(echo $addrport | tr ':' ' ')
-	targetcli /iscsi/$iqn/tpg1/portals create $addr $port
+	portals=( ${iscsit_portals[$idx]} )
+	for addrport in ${portals[@]}; do
+		read -r addr port <<< $(echo $addrport | tr ':' ' ')
+		targetcli /iscsi/$iqn/tpg1/portals create $addr $port
+	done
 
 	acls=( ${iscsit_acls[$idx]} )
 	for acl in ${acls[@]}; do
 		targetcli /iscsi/$iqn/tpg1/acls create $acl
 	done
+	if [ ${#acls[@]} -eq 0 ]; then
+		# generate acl automatically if no acl is specified.
+		targetcli /iscsi/$iqn/tpg1 set attribute generate_node_acls=1
+	fi
 
 	luns=( ${iscsit_luns[$idx]} )
 	for lun in ${luns[@]}; do
-		targetcli /backstores/block create $lun ${device_table[$lun]}
-		targetcli /iscsi/$iqn/tpg1/luns create /backstores/block/$lun
+		# lunid is to be the model attribute for an iscsi disk. Model attribute
+		# can be  queried by `udevadm info` and its length must be less than 16,
+		# a limit imposed by kernel module.
+		lunid="${iscsit_host}-${lun##*-}"
+		if [ ${#lunid} -ge 16 ]; then
+			errexit "too long lunid: $lunid"
+		fi
+
+		targetcli /backstores/block create $lunid $lun
+		targetcli /iscsi/$iqn/tpg1/luns create /backstores/block/$lunid
 	done
 }
 
 iscsit_populate() {
-	for i in ${!iscsit_iqn[@]}; do
+	for i in ${!iscsit_name[@]}; do
 		iscsit_create $i
 	done
 
