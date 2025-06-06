@@ -1,0 +1,27 @@
+install/uninstall lfs/lvm on client machines
+
+install
+=======
+select a command below for the target machines and replace with real ip addresses.
+
+# for a800 machines
+./store-deploy -f a800.yaml -n ip1[,ip2,..]
+
+# for h800 machines
+./store-deploy -f h800.yaml -n ip1[,ip2,..]
+
+# for cpu machines
+./store-deploy -f cpu.yaml -n ip1[,ip2,..]
+
+uninstall
+=========
+select a command below for the target machines and replace with real ip addresses.
+
+# for a800 machines
+./store-deploy -u -f a800.yaml -n ip1[,ip2,..]
+
+# for h800 machines
+./store-deploy -u -f h800.yaml -n ip1[,ip2,..]
+
+# for cpu machines
+./store-deploy -u -f cpu.yaml -n ip1[,ip2,..]
