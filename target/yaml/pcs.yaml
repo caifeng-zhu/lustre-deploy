@@ -1,0 +1,53 @@
+agents:
+  - mgmtip: 10.20.6.59
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+cluster:
+  name: copyset1
+
+  authuser: hacluster
+  authpasswd: hapasswd
+
+  ipmiuser: zhucaifeng
+  ipmipasswd: LbV3sxXPp0zcf
+
+  hosts:
+    - name: n059
+      authaddr: 10.20.6.59
+      ipmiaddr: 172.16.1.59
+    - name: n099
+      authaddr: 10.20.6.99
+      ipmiaddr: 172.16.1.99
+    - name: n100
+      authaddr: 10.20.6.100
+      ipmiaddr: 172.16.1.100
+
+grouptypes:
+  - name: ldiskfs_mdt
+    params:
+      lfsname: afa01
+
+  - name: ldiskfs_ost
+    params:
+      lfsname: afa01
+
+targets:
+  - name: mgt
+    grptype: ldiskfs_mdt
+    locations: [ n059, n099 ]
+  - name: mdt0
+    grptype: ldiskfs_mdt
+    locations: [ n059, n099 ]
+  - name: ost0
+    grptype: ldiskfs_ost
+    locations: [ n059, n099 ]
+
+  - name: ost1
+    grptype: ldiskfs_ost
+    locations: [ n099, n100 ]
+
+  - name: ost2
+    grptype: ldiskfs_ost
+    locations: [ n100, n059 ]

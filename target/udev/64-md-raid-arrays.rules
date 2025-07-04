@@ -1,0 +1,9 @@
+SUBSYSTEM!="block", GOTO="md_end"
+
+# handle md arrays
+ACTION=="remove", GOTO="md_end"
+KERNEL!="md*", GOTO="md_end"
+
+ENV{DEVTYPE}=="disk", ENV{MD_DEVNAME}=="ost?*", ATTR{md/group_thread_cnt}="16",ATTR{md/skip_copy}="1"
+
+LABEL="md_end"

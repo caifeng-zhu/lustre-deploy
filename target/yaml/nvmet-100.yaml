@@ -1,0 +1,33 @@
+agents:
+  - mgmtip: 10.20.6.59
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: client
+
+  - mgmtip: 10.20.6.99
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: client
+
+  - mgmtip: 10.20.6.100
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+hostid: n100
+
+ports:
+  - portid: 0
+    traddr: 10.20.6.100
+    trsvcid: 4420
+    transport: tcp
+
+targets:
+  - portids: [ 0 ]
+    offload: 0
+    nsids: [ 1 ]
+    subsysids:
+      - "0000:01:00.0"
+      - "0000:02:00.0"
+      - "0000:c1:00.0"
+      - "0000:c2:00.0"

@@ -1,0 +1,43 @@
+agent:
+  script: ./ltgt_agent.sh
+  workdir: /tmp/ltgt
+
+lustre:
+  fsname: "vmlfs01"
+  mgsnids: [ 10.5.21.70@tcp, 10.5.21.71@tcp ]
+  osdtype: zfs
+
+diskgroups:
+  - name: mgtmdt0-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ e7f12154 ]
+    diskids: [ 0000:01:00.0-n1, 0000:01:00.0-n2 ]
+
+  - name: ost0-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ e7f12154 ]
+    diskids: [ 0000:02:00.0-n1, 0000:02:00.0-n2, 0000:02:00.0-n3, 0000:c1:00.0-n1, 0000:c1:00.0-n2, 0000:c1:00.0-n3 ]
+
+volumes:
+  - name: mdt0pool
+    raid: mirror
+    diskgroup: mgtmdt0-disks
+    partsizes: [ 0%, 100% ]
+
+  - name: ost0pool
+    raid: raidz2
+    diskgroup: ost0-disks
+    partsizes: [ 0%, 100% ]
+
+targets:
+  - name: mgt
+    nids: [ 10.5.21.70@tcp, 10.5.21.71@tcp ]
+    vols: [ mdt0pool ]
+
+  - name: mdt0
+    nids: [ 10.5.21.70@tcp, 10.5.21.71@tcp ]
+    vols: [ mdt0pool ]
+
+  - name: ost0
+    nids: [ 10.5.21.71@tcp, 10.5.21.70@tcp ]
+    vols: [ ost0pool ]

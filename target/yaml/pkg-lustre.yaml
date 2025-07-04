@@ -1,0 +1,8 @@
+agent:
+  workdir: /tmp/pkginstall
+  script: ./tgtagent.sh
+
+pkgs:
+    - targetcli-fb
+    - nvme-cli
+    - ~/nvmetcli/dist/nvmetcli_0.8.ebtech.2.g07bf263_all.deb

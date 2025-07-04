@@ -1,0 +1,43 @@
+agents:
+  - mgmtip: 10.20.6.99
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+  - mgmtip: 10.20.6.100
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: backup
+
+  - mgmtip: 10.20.6.59
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: backup
+
+lustre:
+  fsname: "afa01"
+  mgsnids: [ 10.20.6.59@tcp, 10.20.6.99@tcp ]
+  osdtype: ldiskfs
+
+diskgroups:
+  - name: ost1-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ n059, n099, n100 ]
+    diskids: [ 0000:c1:00.0-n1 ]
+
+devices:
+  - name: ost1-journal
+    type: raid1
+    diskgroup: ost1-disks
+    partsizes: [ 16MiB, 1GiB ]
+
+  - name: ost1-data
+    type: raid5
+    diskgroup: ost1-disks
+    partsizes: [ 1GiB, 100% ]
+
+targets:
+  - name: ost1
+    nids: [ 10.20.6.59@tcp, 10.20.6.99@tcp ]
+    devs: [ ost1-data, ost1-journal ]
+
