@@ -6,3 +6,4 @@ pkgs:
     - targetcli-fb
     - nvme-cli
     - ~/nvmetcli/dist/nvmetcli_0.8.ebtech.2.g07bf263_all.deb
+    - python-is-python3

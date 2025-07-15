@@ -106,7 +106,8 @@ class NvmetSubsys(ConfigObject):
             ns.create(agent)
 
     def destroy(self, agent):
-        agent.execute('nvmet_subsys_destroy', self.nqn)
+        pass
+        #agent.execute('nvmet_subsys_destroy', self.nqn)
 
 
 class NvmetNamespace(ConfigObject):

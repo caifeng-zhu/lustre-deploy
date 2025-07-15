@@ -6,7 +6,7 @@ import yaml
 import os
 import subprocess
 
-debug = True
+debug = False
 
 def run(cmd):
     global debug
@@ -38,18 +38,18 @@ class PkgAgent:
         return f'{self.workdir}/' + os.path.basename(origfile)
 
     def start(self):
-        run(f'clush -qS -w {self.hosts} -b mkdir -p {self.workdir}')
+        run(f'clush -qS -l root -w {self.hosts} -b mkdir -p {self.workdir}')
         self.copy(self.script)
 
     def execute(self, opname, *args):
         #opargs = ' '.join(f"'{arg}'" for arg in args)
         opargs = ' '.join(args)
         script = self.workfile(self.script)
-        run(f'clush -qS -w {self.hosts} -b {script} active {opname} {opargs}')
+        run(f'clush -qS -l root -w {self.hosts} -b {script} active {opname} {opargs}')
 
     def copy(self, *files):
         copyfiles = ' '.join(files)
-        run(f'clush -qS -w {self.hosts} --copy {copyfiles} --dest {self.workdir}')
+        run(f'clush -qS -l root -w {self.hosts} --copy {copyfiles} --dest {self.workdir}')
         return [ self.workfile(file) for file in files ]
 
 
