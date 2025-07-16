@@ -15,8 +15,12 @@ runcmd() {
 safe_cp() {
 	new=$1
 	old=$2/$(basename $new)
+	dir=$2
 	if [ -e $old ]; then
 		runcmd mv $old ${old}.orig
+	fi
+	if [ ! -d $dir ]; then
+		runcmd mkdir -p $dir
 	fi
 	runcmd cp -f $new $old
 }
@@ -119,6 +123,7 @@ etc_install_one() {
 			;;
 		esac
 		runcmd "sed -i -e 's/# host_id = 0$/host_id = $id/g' $file"
+		safe_cp $file /etc/lvm/
 
 		# no need to restart lvmlockd since host id is accessed
 		# when vgchange is run.
@@ -126,6 +131,15 @@ etc_install_one() {
 		;;
 	lvm.conf)
 		safe_cp $file /etc/lvm/
+		;;
+	lvm | lvmagent)
+		safe_cp $file /opt/lvmcsi/
+		;;
+	lvmagent.service)
+		unit=$(basename $file)
+		runcmd cp -f $file /etc/systemd/system/
+		runcmd systemctl enable $unit
+		runcmd systemctl start $unit
 		;;
 	*)
 		errexit "unkonwn file: $file"
@@ -181,6 +195,13 @@ etc_uninstall_one() {
 		runcmd systemctl disable lvmlockd
 		;;
 	lvm.conf)
+		;;
+	lvm | lvmagent)
+		;;
+	lvmagent.service)
+		unit=$(basename $file)
+		runcmd systemctl stop lvmagent.service
+		runcmd systemctl disable lvmagent.service
 		;;
 	*)
 		errexit "unkonwn file: $file"

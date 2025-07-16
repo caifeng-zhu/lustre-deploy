@@ -29,6 +29,9 @@ services:
       - lvm/sanlock
       - lvm/lvmlocal.conf
       - lvm/lvm.conf
+      - lvm/lvm
+      - lvm/lvmagent
+      - lvm/lvmagent.service
     startcmds:
       - "vgchange --lockstart vgk8s01"
     stopcmds:
