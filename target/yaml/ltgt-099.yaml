@@ -38,6 +38,6 @@ devices:
 
 targets:
   - name: ost1
-    nids: [ 10.20.6.59@tcp, 10.20.6.99@tcp ]
+    nids: [ 10.20.6.99@tcp, 10.20.6.100@tcp ]
     devs: [ ost1-data, ost1-journal ]
 
