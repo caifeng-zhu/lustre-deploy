@@ -1,0 +1,10 @@
+SUBSYSTEM!="block", GOTO="mdraid_device_ltgt_end"
+ENV{UDISKS_MD_MEMBER_NAME}=="*:mgt*-*", GOTO="mdraid_device_ltgt_add"
+ENV{UDISKS_MD_MEMBER_NAME}=="*:mdt*-*", GOTO="mdraid_device_ltgt_add"
+ENV{UDISKS_MD_MEMBER_NAME}=="*:ost*-*", GOTO="mdraid_device_ltgt_add"
+GOTO="mdraid_device_ltgt_end"
+
+LABEL="mdraid_device_ltgt_add"
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="raid", ENV{ID_FS_TYPE}=="linux_raid_member", RUN+="/lib/lustre/ltgt_mdraid.sh $devnode $env{UDISKS_MD_MEMBER_NAME}"
+
+LABEL="mdraid_device_ltgt_end"

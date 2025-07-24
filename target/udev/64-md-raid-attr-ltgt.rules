@@ -1,0 +1,9 @@
+SUBSYSTEM!="block", GOTO="mdraid_attr_ltgt_end"
+
+# handle md arrays
+ACTION=="remove", GOTO="mdraid_attr_ltgt_end"
+KERNEL!="md*", GOTO="mdraid_attr_ltgt_end"
+
+ENV{DEVTYPE}=="disk", ENV{MD_DEVNAME}=="ost?*", ATTR{md/group_thread_cnt}="16",ATTR{md/skip_copy}="1"
+
+LABEL="mdraid_attr_ltgt_end"
