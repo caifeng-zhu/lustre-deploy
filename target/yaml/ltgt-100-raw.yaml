@@ -1,0 +1,65 @@
+agents:
+  - mgmtip: 10.20.6.100
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+lustre:
+  fsname: "mix01"
+  mgsnids: [ 10.20.6.59@tcp ]
+  osdtype: ldiskfs
+
+diskgroups:
+  - name: ost6-disks
+    diskdir: /dev/disk/nvme
+    disknames: [ n100-0000:01:00.0-n1 ]
+
+  - name: ost7-disks
+    diskdir: /dev/disk/nvme
+    disknames: [ n100-0000:02:00.0-n1 ]
+
+  - name: ost8-disks
+    diskdir: /dev/disk/nvme
+    disknames: [ n100-0000:c1:00.0-n1 ]
+
+  - name: ost9-disks
+    diskdir: /dev/disk/nvme
+    disknames: [ n100-0000:c2:00.0-n1 ]
+
+devices:
+  - name: ost6-data
+    type: raw
+    diskgroup: ost6-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost7-data
+    type: raw
+    diskgroup: ost7-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost8-data
+    type: raw
+    diskgroup: ost8-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost9-data
+    type: raw
+    diskgroup: ost9-disks
+    partsizes: [ 1GiB, 100% ]
+
+targets:
+  - name: ost6
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost6-data ]
+
+  - name: ost7
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost7-data ]
+
+  - name: ost8
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost8-data ]
+
+  - name: ost9
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost9-data ]

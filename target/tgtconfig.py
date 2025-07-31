@@ -17,6 +17,10 @@ def run(cmd: str):
 
 
 class ConfigData:
+    """
+    ConfigData is intended to simplify the config data access: 
+    cfg['field'] is now can be read by cfgdt.field.
+    """
     def __init__(self, cfg):
         self.cfg = cfg
 
@@ -56,16 +60,3 @@ class ConfigAgent:
         for agent in agents:
             agent.start()
         return agents
-
-class ConfigObject:
-    def __init__(self, cfg):
-       self.cfgdt = ConfigData(cfg)
-
-    def build(self, *args):
-        pass
-
-    def create(self, agent):
-        pass
-
-    def destroy(self, agent):
-        pass

@@ -6,31 +6,32 @@ import os
 import yaml
 import argparse
 from typing import List, Dict
-from tgtconfig import ConfigAgent, ConfigObject
+from tgtconfig import ConfigAgent, ConfigData
 
 
-class PcsHost(ConfigObject):
-    def __init__(self, cfg, ipmiuser, ipmipasswd):
-        super().__init__(cfg)
-        self.user = ipmiuser
-        self.passwd = ipmipasswd
+class PcsHost:
+    def __init__(self, cfg):
+        cfgdt = ConfigData(cfg)
 
-    def create(self, agent):
-        agent.execute('pcs_host_auth', self.cfgdt.name, self.cfgdt.authaddr,
-                      self.user, self.passwd)
-
-    def name_addr(self):
-        return f"{self.cfgdt.name} addr={self.cfgdt.authaddr}"
-
-
-class PcsStonith(ConfigObject):
-    def __init__(self, cfg, ipmiuser, ipmipasswd):
-        super().__init__(cfg)
-        self.user = ipmiuser
-        self.passwd = ipmipasswd
+        self.name = cfgdt.name
+        self.authaddr = cfgdt.authaddr
+        self.authuser = cfgdt.authuser
+        self.authpasswd = cfgdt.authpasswd
+        self.ipmiaddr = cfgdt.ipmiaddr
+        self.ipmiuser = cfgdt.ipmiuser
+        self.ipmipasswd = cfgdt.ipmipasswd
         self.isprimary = False
 
-    def create(self, agent):
+    def create_auth(self, agent):
+        agent.execute('pcs_host_auth', self.name, self.authaddr,
+                      self.authuser, self.authpasswd)
+
+    @property
+    def name_addr(self):
+        return f"{self.name} addr={self.authaddr}"
+
+
+    def create_stonith(self, agent):
         if self.isprimary:
             # it is the primary node and the backup one
             # is told to delay when carrying on stonith.
@@ -38,100 +39,84 @@ class PcsStonith(ConfigObject):
         else:
             delay = ''
         agent.execute('pcs_stonith_create',
-                      f"ipmi-{self.cfgdt.name}",
+                      f"ipmi-{self.name}",
                       "fence_ipmilan lanplus=true",
-                      f"ip={self.cfgdt.ipmiaddr}",
-                      f"username='{self.user}'",
-                      f"password='{self.passwd}'",
+                      f"ip={self.ipmiaddr}",
+                      f"username='{self.ipmiuser}'",
+                      f"password='{self.ipmipasswd}'",
                       "privlvl=operator",
-                      f'pcmk_host_list={self.cfgdt.name}',
+                      f'pcmk_host_list={self.name}',
                       delay)
 
     def set_primary(self):
         self.isprimary = True
 
 
-class PcsGroupType(ConfigObject):
+class PcsGroupType:
     def __init__(self, cfg):
-        super().__init__(cfg)
+        cfgdt = ConfigData(cfg)
+        self.name = cfgdt.name
+        self.params = [f'{k}={v}' for k, v in cfgdt.params.items()]
 
-    def getparams(self):
-        return [f'{k}={v}' for k, v in self.cfgdt.params.items()]
 
+class PcsTarget:
+    def __init__(self, cfg, grptypes):
+        cfgdt = ConfigData(cfg)
 
-class PcsTarget(ConfigObject):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        self.grptype = None
-
-    def build(self, grptypes):
-        self.grptype = grptypes[self.cfgdt.grptype]
+        self.name = cfgdt.name
+        self.grptype = grptypes[cfgdt.grptype]
+        self.locations = cfgdt.locations
 
     def create(self, agent):
-        cmd = 'pcs_resgroup_create' + f'_{self.cfgdt.grptype}'
-        agent.execute(cmd, self.cfgdt.name,
-                      f"{self.cfgdt.locations[0]}=200",
-                      f"{self.cfgdt.locations[1]}=100",
-                      *self.grptype.getparams())
+        cmd = f'pcs_resgroup_create_{self.grptype.name}'
+        agent.execute(cmd, self.name,
+                      f"{self.locations[0]}=200",
+                      f"{self.locations[1]}=100",
+                      *self.grptype.params)
 
 
-class PcsCluster(ConfigObject):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        self.hosts = []
-        self.stoniths = []
-        self.targets = []
+class PcsCluster:
+    def __init__(self, cfg, targets):
+        cfgdt = ConfigData(cfg)
 
-    def build(self, targets):
-        for hc in self.cfgdt.hosts:
-            host = PcsHost(hc, self.cfgdt.authuser, self.cfgdt.authpasswd)
-            self.hosts.append(host)
-
-        for hc in self.cfgdt.hosts:
-            stonith = PcsStonith(hc, self.cfgdt.ipmiuser, self.cfgdt.ipmipasswd)
-            self.stoniths.append(stonith)
-        if len(self.stoniths) == 2:
+        self.name = cfgdt.name
+        self.targets = targets
+        self.hosts = [PcsHost(cfg) for cfg in cfgdt.hosts]
+        if len(self.hosts) == 2:
             # for a two node topology, the first node is selected as the
             # primary one. the primary node can delay the other node when
             # doing stonith.
-            self.stoniths[0].set_primary()
-
-        self.targets.extend(targets)
+            self.hosts[0].set_primary()
 
     def create(self, agent):
         for host in self.hosts:
-            host.create(agent)
+            host.create_auth(agent)
 
-        host_nameaddrs = ' '.join(h.name_addr() for h in self.hosts).strip()
-        agent.execute('pcs_cluster_setup', self.cfgdt.name, host_nameaddrs)
+        name_addrs = ' '.join(h.name_addr for h in self.hosts).strip()
+        agent.execute('pcs_cluster_setup', self.name, name_addrs)
         if len(self.hosts) == 2:
             agent.execute('pcs_property_set', 'no-quorum-policy=ignore')
 
         for tgt in self.targets:
             tgt.create(agent)
 
-        for stonith in self.stoniths:
-            stonith.create(agent)
+        for host in self.hosts:
+            host.create_stonith(agent)
 
     def destroy(self, agent):
         agent.execute('pcs_cluster_destroy')
 
 
 def build(config):
-    cluster = PcsCluster(config['cluster'])
-
-    grptype_map = {}
-    for cfg in config['grouptypes']:
-        res = PcsGroupType(cfg)
-        grptype_map[cfg['name']] = res
-
-    targets = []
-    for cfg in config['targets']:
-        tgt = PcsTarget(cfg)
-        tgt.build(grptype_map)
-        targets.append(tgt)
-
-    cluster.build(targets)
+    grptypes = {
+        cfg['name'] : PcsGroupType(cfg)
+        for cfg in config['grouptypes']
+    }
+    targets = [
+        PcsTarget(cfg, grptypes)
+        for cfg in config['targets']
+    ]
+    cluster = PcsCluster(config['cluster'], targets)
     return ConfigAgent.from_config(config['agents']), cluster
 
 

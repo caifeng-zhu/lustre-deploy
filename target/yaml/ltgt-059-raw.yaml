@@ -1,0 +1,72 @@
+agents:
+  - mgmtip: 10.20.6.59
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+lustre:
+  fsname: "mix01"
+  mgsnids: [ 10.20.6.59@tcp ]
+  osdtype: ldiskfs
+
+diskgroups:
+  - name: mgtmdt0-data-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ n059 ]
+    diskids: [ 0000:01:00.0-n1, 0000:02:00.0-n1 ]
+
+  - name: ost0-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ n059 ]
+    diskids: [ 0000:c1:00.0-n1 ]
+
+  - name: ost1-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ n059 ]
+    diskids: [ 0000:c2:00.0-n1 ]
+
+devices:
+  - name: mgt-data
+    type: raid1
+    diskgroup: mgtmdt0-data-disks
+    partsizes: [ 16MiB, 1GiB ]
+
+  - name: mdt0-data
+    type: raid1
+    diskgroup: mgtmdt0-data-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost0-journal
+    type: raw
+    diskgroup: ost0-disks
+    partsizes: [ 16MiB, 1GiB ]
+  - name: ost0-data
+    type: raw
+    diskgroup: ost0-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost1-journal
+    type: raw
+    diskgroup: ost1-disks
+    partsizes: [ 16MiB, 1GiB ]
+  - name: ost1-data
+    type: raw
+    diskgroup: ost1-disks
+    partsizes: [ 1GiB, 100% ]
+
+targets:
+  - name: mgt
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ mgt-data ]
+
+  - name: mdt0
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ mdt0-data ]
+
+  - name: ost0
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ ost0-data ]
+
+  - name: ost1
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ ost1-data ]

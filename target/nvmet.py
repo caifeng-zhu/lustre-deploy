@@ -2,24 +2,16 @@
 
 import yaml
 import argparse
-from tgtconfig import ConfigAgent, ConfigObject
+from tgtconfig import ConfigAgent, ConfigData
 
-class NvmetTopology(ConfigObject):
+class NvmetTopology:
     def __init__(self, cfg):
-        super().__init__(cfg)
-        self.ports = []
-        self.targets = []
+        cfgdt = ConfigData(cfg)
+        hostid = cfgdt.hostid
 
-    def build(self):
-        for cfg in self.cfgdt.ports:
-            port = NvmetPort(cfg)
-            self.ports.append(port)
-            port.build()
-
-        for cfg in self.cfgdt.targets:
-            tgt = NvmetTarget(cfg)
-            self.targets.append(tgt)
-            tgt.build(self.cfgdt.hostid, self.ports)
+        self.ports = [NvmetPort(cfg) for cfg in cfgdt.ports]
+        self.targets = [NvmetTarget(cfg, hostid, self.ports)
+                        for cfg in cfgdt.targets]
 
     def create(self, agent):
         for port in self.ports:
@@ -35,19 +27,13 @@ class NvmetTopology(ConfigObject):
             port.destroy(agent)
 
 
-class NvmetTarget(ConfigObject):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        self.ports = []
-        self.subsyses = []
+class NvmetTarget:
+    def __init__(self, cfg, hostid, ports):
+        cfgdt = ConfigData(cfg)
 
-    def build(self, hostid, allports):
-        for i in self.cfgdt.portids:
-            self.ports.append(allports[i])
-        for subsysid in self.cfgdt.subsysids:
-            subsys = NvmetSubsys(self.cfgdt.cfg, hostid, subsysid)
-            self.subsyses.append(subsys)
-            subsys.build()
+        self.ports = ports
+        self.subsyses = [NvmetSubsys(cfgdt, hostid, subsysid)
+                         for subsysid in cfgdt.subsysids]
 
     def create(self, agent):
         for subsys in self.subsyses:
@@ -63,45 +49,41 @@ class NvmetTarget(ConfigObject):
         agent.execute('nvmet_clear')
 
 
-class NvmetPort(ConfigObject):
+class NvmetPort:
     def __init__(self, cfg):
-        super().__init__(cfg)
+        cfgdt = ConfigData(cfg)
+
+        self.portid = cfgdt.portid
+        self.traddr = cfgdt.traddr
+        self.trsvcid = cfgdt.trsvcid
+        self.transport = cfgdt.transport
 
     def create(self, agent):
-        agent.execute('nvmet_port_create', self.cfgdt.portid,
-                      self.cfgdt.traddr, self.cfgdt.trsvcid,
-                      self.cfgdt.transport)
+        agent.execute('nvmet_port_create', self.portid, self.traddr,
+                      self.trsvcid, self.transport)
 
     def destroy(self, agent):
-        agent.execute('nvmet_port_destroy', self.cfgdt.portid,
-                      self.cfgdt.traddr, self.cfgdt.trsvcid,
-                      self.cfgdt.transport)
+        agent.execute('nvmet_port_destroy', self.portid, self.traddr,
+                      self.trsvcid, self.transport)
 
     def add_subsys(self, agent, nqn):
-        agent.execute('nvmet_port_add_subsys', self.cfgdt.portid,
-                      self.cfgdt.traddr, self.cfgdt.trsvcid,
-                      self.cfgdt.transport, nqn)
+        agent.execute('nvmet_port_add_subsys', self.portid, self.traddr,
+                      self.trsvcid, self.transport, nqn)
 
     def del_subsys(self, agent, nqn):
-        agent.execute('nvmet_port_del_subsys', self.cfgdt.portid,
-                      self.cfgdt.traddr, self.cfgdt.trsvcid,
-                      self.cfgdt.transport, nqn)
+        agent.execute('nvmet_port_del_subsys', self.portid, self.traddr,
+                      self.trsvcid, self.transport, nqn)
 
 
-class NvmetSubsys(ConfigObject):
-    def __init__(self, cfg, hostid: str, subsysid: str):
-        super().__init__(cfg)
+class NvmetSubsys:
+    def __init__(self, cfgdt, hostid: str, subsysid: str):
+        self.offload = cfgdt.offload
         self.nqn = f"{hostid}-{subsysid}"
-        self.namespaces = []
-
-    def build(self):
-        for nsid in self.cfgdt.nsids:
-            ns = NvmetNamespace(self.nqn, nsid)
-            ns.build()
-            self.namespaces.append(ns)
+        self.namespaces = [NvmetNamespace(self.nqn, nsid) 
+                           for nsid in cfgdt.nsids]
 
     def create(self, agent):
-        agent.execute('nvmet_subsys_create', self.nqn, self.cfgdt.offload)
+        agent.execute('nvmet_subsys_create', self.nqn, self.offload)
         for ns in self.namespaces:
             ns.create(agent)
 
@@ -110,20 +92,21 @@ class NvmetSubsys(ConfigObject):
         #agent.execute('nvmet_subsys_destroy', self.nqn)
 
 
-class NvmetNamespace(ConfigObject):
+class NvmetNamespace:
     def __init__(self, nqn, nsid):
-        super().__init__(None)
         self.nqn = nqn
         self.nsid = nsid
 
+    @property
+    def devpath(self):
+        return f"/dev/disk/nvme/{self.nqn}-n{self.nsid}"
+
     def create(self, agent):
-        devpath = f"/dev/disk/nvme/{self.nqn}-n{self.nsid}"
-        agent.execute('nvmet_namespace_create', self.nqn, self.nsid, devpath)
+        agent.execute('nvmet_namespace_create', self.nqn, self.nsid, self.devpath)
 
 
 def build(config):
     topology = NvmetTopology(config)
-    topology.build()
     agents = ConfigAgent.from_config(config['agents'])
     return agents, topology
 

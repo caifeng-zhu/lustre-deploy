@@ -23,14 +23,7 @@ runcmd() {
 
 wait_device() {
 	local devpath=$1
-
-	while [ ! -e $devpath ]; do
-		echo wait for $devpath 1 second
-		sleep 1
-		if [ $debug -ne 0 ]; then
-			return
-		fi
-	done
+	udevadm settle --exit-if-exists $devpath
 }
 
 apt_install() {
@@ -65,7 +58,8 @@ nvmet_port_create() {
 		entry+="--traddr=$traddr "
 		entry+="--trsvcid=$trsvcid "
 		entry+="--host-traddr=$hostaddr "
-		entry+="--nr-io-queues=4 --ctrl-loss-tmo=3 --reconnect-delay=1 --keep-alive-tmo=1"
+		entry+="--nr-io-queues=4 --ctrl-loss-tmo=3 --reconnect-delay=1 --keep-alive-tmo=1 "
+		entry+="--persistent"
 
 		sed -i "/$entry/d" /etc/nvme/discovery.conf
 		echo $entry | tee -a /etc/nvme/discovery.conf
@@ -109,7 +103,10 @@ nvmet_port_add_subsys() {
 		runcmd nvmetcli /ports/$portid/subsystems create $nqn
 		;;
 	client)
-		runcmd nvme connect --nqn $nqn --traddr $traddr --trsvcid $trsvcid --transport $transport
+		hostaddr=$(ip addr show to $traddr/24 | sed -n '2p' | awk '{ print $2 }')
+		hostaddr=${hostaddr%%/*}
+		runcmd nvme connect --nqn $nqn --traddr $traddr --trsvcid $trsvcid --transport $transport \
+			--nr-io-queues=4 --ctrl-loss-tmo=3 --reconnect-delay=1 --keep-alive-tmo=1
 		;;
 	esac
 }
@@ -217,10 +214,28 @@ iscsit_portal_create() {
 		runcmd targetcli /iscsi/$iqn/tpg1/portals create $addr $port
 		;;
 	client)
-		runcmd iscsiadm -m discovery -t st -p $addr:$port
-		runcmd iscsiadm -m node -l -T $iqn -p $addr:$port
 		;;
 	esac
+}
+
+iscsit_portal_connect() {
+	local iqn=$1
+	local addr=$2
+	local port=$3
+
+	runcmd iscsiadm -m discovery -t st -p $addr:$port
+	runcmd iscsiadm -m node -l -T $iqn -p $addr:$port
+}
+
+iscsit_portal_disconnect() {
+	local iqn=$1
+	local addr=$2
+	local port=$3
+
+	set +e	# ignore error
+	runcmd iscsiadm -m node -u -T $iqn -p $addr:$port
+	runcmd iscsiadm -m discoverydb -t st -p $addr:$port -o delete
+	set -e
 }
 
 iscsit_portal_destroy() {
@@ -233,10 +248,6 @@ iscsit_portal_destroy() {
 		# active side destroy by 'targetctl clear'
 		;;
 	client)
-		set +e	# ignore error
-		runcmd iscsiadm -m node -u -T $iqn -p $addr:$port
-		runcmd iscsiadm -m discoverydb -t st -p $addr:$port -o delete
-		set -e
 		;;
 	esac
 }
@@ -320,7 +331,19 @@ parted_mkpart() {
 }
 
 parted_rm() {
-	# TODO
+	local disk=$1
+	local part=$2
+
+	if [ ! -e $disk ]; then
+		return 0
+	fi
+
+	partnum=$(parted -m $disk print | awk -F: -v p=$part '$0 ~ p { print $1 }')
+	if [ -z "$partnum" ]; then
+		return 0
+	fi
+
+	runcmd parted -s $disk rm $partnum
 	return 0
 }
 
@@ -399,7 +422,9 @@ mdraid_new_config() {
 mdraid_del_config() {
 	local tgtname=$1
 
-	runcmd rm -f /etc/mdadm/$tgtname.conf
+	if [ -e "/etc/mdadm/$tgtname.conf" ]; then
+		runcmd rm -f /etc/mdadm/$tgtname.conf
+	fi
 }
 
 lustre_nidopt() {
@@ -480,7 +505,7 @@ ldiskfs_mdt_create() {
 	esac
 }
 
-ldiskfs_ost_create() {
+ldiskfs_ost_create_mdraid() {
 	local lfsname=$1
 	local tgtname=$2
 	local svcnids=$3
@@ -494,6 +519,7 @@ ldiskfs_ost_create() {
 	active)
 		local opt_svcnids=$(lustre_nidopt '--servicenode' $svcnids)
 		local opt_mgsnids=$(lustre_nidopt '--mgsnode' $mgsnids)
+
 		runcmd mke2fs -O journal_dev -b 4096 $jvol
 
 		mddev=$(basename $(realpath $dvol))
@@ -506,10 +532,57 @@ ldiskfs_ost_create() {
 			--mkfsoptions='-E lazy_itable_init=1,nodiscard,stride=$stride,stripe_width=256 -J device=$jvol' \
 			--mountfsoptions='journal_path=$jvol' \
 			$dvol"
+
 		lustre_mount $dvol /var/lib/lustre/$lfsname/$tgtname
 		;;
 	backup)
 		runcmd mkdir -p /var/lib/lustre/$lfsname/$tgtname
+		;;
+	esac
+
+}
+
+ldiskfs_ost_create_noraid() {
+	local lfsname=$1
+	local tgtname=$2
+	local svcnids=$3
+	local mgsnids=$4
+	local dvol=$5
+
+	case $mode in
+	active)
+		local opt_svcnids=$(lustre_nidopt '--servicenode' $svcnids)
+		local opt_mgsnids=$(lustre_nidopt '--mgsnode' $mgsnids)
+
+		runcmd "mkfs.lustre --ost --index=${tgtname#ost} \
+			--fsname=$lfsname --reformat --backfstype=ldiskfs \
+			$opt_svcnids \
+			$opt_mgsnids \
+			--mkfsoptions='-E lazy_itable_init=1,nodiscard' \
+			$dvol"
+
+		lustre_mount $dvol /var/lib/lustre/$lfsname/$tgtname
+		;;
+	backup)
+		runcmd mkdir -p /var/lib/lustre/$lfsname/$tgtname
+		;;
+	esac
+}
+
+ldiskfs_ost_create() {
+	local lfsname=$1
+	local tgtname=$2
+	local svcnids=$3
+	local mgsnids=$4
+	local dvol=$5
+	local jvol=$6
+
+	case $dvol in
+	/dev/md/*)
+		ldiskfs_ost_create_mdraid $lfsname $tgtname $svcnids $mgsnids $dvol $jvol
+		;;
+	*)
+		ldiskfs_ost_create_noraid $lfsname $tgtname $svcnids $mgsnids $dvol
 		;;
 	esac
 }
@@ -749,6 +822,8 @@ case $oper in
 'iscsit_iqn_create')		iscsit_iqn_create $*		;;
 'iscsit_iqn_destroy')		iscsit_iqn_destroy $*		;;
 'iscsit_portal_create')		iscsit_portal_create $*		;;
+'iscsit_portal_connect')	iscsit_portal_connect $*	;;
+'iscsit_portal_disconnect')	iscsit_portal_disconnect $*	;;
 'iscsit_portal_destroy')	iscsit_portal_destroy $*	;;
 'iscsit_acl_create')		iscsit_acl_create $*		;;
 'iscsit_lun_create')		iscsit_lun_create $*		;;
