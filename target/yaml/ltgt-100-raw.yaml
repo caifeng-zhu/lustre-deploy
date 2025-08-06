@@ -26,6 +26,22 @@ diskgroups:
     diskdir: /dev/disk/nvme
     disknames: [ n100-0000:c2:00.0-n1 ]
 
+  - name: ost108-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:4:0 ]
+
+  - name: ost109-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:5:0 ]
+
+  - name: ost110-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:6:0 ]
+
+  - name: ost111-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:7:0 ]
+
 devices:
   - name: ost6-data
     type: raw
@@ -47,6 +63,26 @@ devices:
     diskgroup: ost9-disks
     partsizes: [ 1GiB, 100% ]
 
+  - name: ost108-data
+    type: raw
+    diskgroup: ost108-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost109-data
+    type: raw
+    diskgroup: ost109-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost110-data
+    type: raw
+    diskgroup: ost110-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost111-data
+    type: raw
+    diskgroup: ost111-disks
+    partsizes: [ 1GiB, 100% ]
+
 targets:
   - name: ost6
     nids: [ 10.20.6.100@tcp ]
@@ -63,3 +99,19 @@ targets:
   - name: ost9
     nids: [ 10.20.6.100@tcp ]
     devs: [ ost9-data ]
+
+  - name: ost108
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost108-data ]
+
+  - name: ost109
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost109-data ]
+
+  - name: ost110
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost110-data ]
+
+  - name: ost111
+    nids: [ 10.20.6.100@tcp ]
+    devs: [ ost111-data ]

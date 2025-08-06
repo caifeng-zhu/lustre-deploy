@@ -25,6 +25,22 @@ diskgroups:
     hostids: [ n059 ]
     diskids: [ 0000:c2:00.0-n1 ]
 
+  - name: ost100-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:4:0 ]
+
+  - name: ost101-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:5:0 ]
+
+  - name: ost102-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:6:0 ]
+
+  - name: ost103-disks
+    diskdir: /dev/disk/by-path
+    disknames: [ pci-0000:41:00.0-scsi-0:2:7:0 ]
+
 devices:
   - name: mgt-data
     type: raid1
@@ -54,6 +70,26 @@ devices:
     diskgroup: ost1-disks
     partsizes: [ 1GiB, 100% ]
 
+  - name: ost100-data
+    type: raw
+    diskgroup: ost100-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost101-data
+    type: raw
+    diskgroup: ost101-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost102-data
+    type: raw
+    diskgroup: ost102-disks
+    partsizes: [ 1GiB, 100% ]
+
+  - name: ost103-data
+    type: raw
+    diskgroup: ost103-disks
+    partsizes: [ 1GiB, 100% ]
+
 targets:
   - name: mgt
     nids: [ 10.20.6.59@tcp ]
@@ -70,3 +106,19 @@ targets:
   - name: ost1
     nids: [ 10.20.6.59@tcp ]
     devs: [ ost1-data ]
+
+  - name: ost100
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ ost100-data ]
+
+  - name: ost101
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ ost101-data ]
+
+  - name: ost102
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ ost102-data ]
+
+  - name: ost103
+    nids: [ 10.20.6.59@tcp ]
+    devs: [ ost103-data ]

@@ -1,0 +1,20 @@
+agents:
+  - mgmtip: 10.5.41.10
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+hostid: n010
+
+ports:
+  - portid: 0
+    traddr: 10.2.1.10
+    trsvcid: 4420
+    transport: rdma
+
+targets:
+  - portids: [ 0 ]
+    offload: 0
+    nsids: [ 1 ]
+    subsysids:
+      - "nvmevol0"

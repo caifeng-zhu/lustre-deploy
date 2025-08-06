@@ -18,7 +18,7 @@ def run(cmd: str):
 
 class ConfigData:
     """
-    ConfigData is intended to simplify the config data access: 
+    ConfigData is intended to simplify the config data access:
     cfg['field'] is now can be read by cfgdt.field.
     """
     def __init__(self, cfg):
