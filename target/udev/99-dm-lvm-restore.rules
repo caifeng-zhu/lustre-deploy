@@ -1,0 +1,2 @@
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="nvme*", ENV{ID_MODEL}=="Linux", RUN+="/opt/lvm/lvm_restore.sh add $env{DEVNAME}"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="nvme*", ENV{ID_MODEL}=="Linux", RUN+="/opt/lvm/lvm_restore.sh remove $env{MAJOR} $env{MINOR}"
