@@ -99,6 +99,11 @@ class NvmetNamespace:
 
     @property
     def devpath(self):
+        _, _, subsysid = self.nqn.partition('-')
+        if subsysid.startswith('nvmevol'):
+            if int(self.nsid) != 1:
+                raise ValueError(f'invalid nsid: {self.nsid}')
+            return f"/dev/md/{subsysid}"
         return f"/dev/disk/nvme/{self.nqn}-n{self.nsid}"
 
     def create(self, agent):
