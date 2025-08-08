@@ -35,4 +35,5 @@ services:
     startcmds:
       - "vgchange --lockstart vgk8s01"
     stopcmds:
+      - "vgchange -an vgk8s01"  # deactivated lv to avoid the residual dm
       - "vgchange --lockstop vgk8s01"

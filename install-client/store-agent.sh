@@ -103,6 +103,7 @@ etc_install_one() {
 		safe_cp $file /etc/default/
 		runcmd systemctl stop wdmd
 		runcmd systemctl disable wdmd
+		runcmd systemctl enable sanlock
 		runcmd systemctl restart sanlock
 		;;
 	lvmlocal.conf)
@@ -110,10 +111,12 @@ etc_install_one() {
 		case $hn in
 		gpu-a800-*)
 			id=${hn##*-}
+			id=$((10#$id))		# Parses a string in decimal
 			id=$((id + 1000))	# distinguish with h800 ids
 			;;
 		gpu-h800-*)
 			id=${hn##*-}
+			id=$((10#$id))		# Parses a string in decimal
 			;;
 		hcyb-*)
 			id=${hn##*-*0}		# for test only
@@ -124,10 +127,8 @@ etc_install_one() {
 		esac
 		runcmd "sed -i -e 's/# host_id = 0$/host_id = $id/g' $file"
 		safe_cp $file /etc/lvm/
-
-		# no need to restart lvmlockd since host id is accessed
-		# when vgchange is run.
-		#runcmd systemctl restart lvmlockd
+		runcmd systemctl enable lvmlockd
+		runcmd systemctl restart lvmlockd
 		;;
 	lvm.conf)
 		safe_cp $file /etc/lvm/
