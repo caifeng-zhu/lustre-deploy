@@ -347,6 +347,26 @@ parted_rm() {
 	return 0
 }
 
+mdraid_start() {
+	local tgtname=$1
+	local volname=$2
+
+	if [ -e /etc/mdadm/${tgtname}.conf ]; then
+		runcmd mdadm --assemble /dev/md/$volname --conf /etc/mdadm/${tgtname}.conf --force
+		wait_device /dev/md/$volname
+		return 0
+	fi
+	return -1
+}
+
+mdraid_stop() {
+	local volname=$1
+
+	if [ -e /dev/md/$volname ]; then
+		runcmd mdadm --stop /dev/md/$volname
+	fi
+}
+
 mdraid_create() {
 	local volname=$1
 	local level=$2
@@ -391,9 +411,7 @@ mdraid_destroy() {
 
 	case $mode in
 	active|backup)
-		if [ -e /dev/md/$volname ]; then
-			runcmd mdadm --stop /dev/md/$volname
-		fi
+		mdraid_stop $volname
 
 		# erase existent md signature if any.
 		for dev in ${devices[@]}; do
@@ -795,10 +813,114 @@ pcs_resgroup_create_zfs() {
 	return 0
 }
 
+pcs_resgroup_create_lvm() {
+	local tgtname=$1
+	local locations=( $2 $3 )
+	shift 3
+	local params=( $* )
+	local -A pmap
+
+	for kv in ${params[@]}; do
+		key=${kv%%=*}
+		val=${kv#*=}
+		pmap[$key]=$val
+	done
+	local volname=${pmap['volname']}
+	local nic=${pmap['nic']}
+	local traddr=${pmap['traddr']}
+	local transport=${pmap['transport']}
+	local nqn=n${traddr##*.}-$volname
+	local uuid=$(uuidgen)
+
+	runcmd pcs resource create $tgtname-mdraid \
+		ocf:heartbeat:mdraid \
+		md_dev=/dev/md/$volname \
+		mdadm_conf=/etc/mdadm/$tgtname.conf \
+		--group $tgtname-group
+
+	runcmd pcs resource create $tgtname-virtualip \
+		ocf:heartbeat:IPaddr2 \
+		arp_sender=iputils_arping \
+		cidr_netmask=32 \
+		ip=$traddr \
+		nic=$nic \
+		--group $tgtname-group
+
+	runcmd pcs resource create $tgtname-nvmet-subsystem \
+		ocf:heartbeat:nvmet-subsystem \
+		nqn=$nqn \
+		--group $tgtname-group
+
+	runcmd pcs resource create $tgtname-nvmet-namespace \
+		ocf:heartbeat:nvmet-namespace \
+		backing_path=/dev/md/$volname \
+		namespace_id=1 \
+		nqn=$nqn \
+		uuid=$uuid \
+		--group $tgtname-group
+
+	# port id 0 is used for local export by default
+	runcmd pcs resource create $tgtname-nvmet-port \
+		ocf:heartbeat:nvmet-port \
+		addr=$traddr \
+		addr_fam=ipv4 \
+		nqns=$nqn \
+		port_id=1 \
+		svcid=4420 \
+		type=$transport \
+		--group $tgtname-group
+
+	runcmd pcs constraint location $tgtname-group prefers ${locations[@]}
+}
+
 pcs_property_set() {
 	local kvs=( $* )
 
 	runcmd pcs property set ${kvs[@]}
+}
+
+lvm_do_vg_destroy() {
+	local vgname=$1
+	local volname=$2
+
+	mdraid_start $vgname $volname
+	if [ $? -ne 0 ]; then
+		return 0
+	fi
+
+	runcmd vgchange --lockstart $vgname
+	runcmd vgremove --force $vgname
+
+	mdraid_stop $volname
+}
+
+lvm_vg_create() {
+	local vgname=$1
+	local volpath=$2
+
+	mdraid_new_config $vgname
+
+	case $mode in
+	active)
+		runcmd vgcreate --share --locktype sanlock $vgname $volpath
+		runcmd vgchange --lockstop $vgname
+		;;
+	esac
+}
+
+lvm_vg_destroy() {
+	local vgname=$1
+	local volname=$2
+
+	case $mode in
+	active)
+		set +e
+		lvm_do_vg_destroy $vgname $volname
+		set -e
+		;;
+	esac
+
+	mdraid_del_config $vgname
 }
 
 mode=$1; shift
@@ -861,10 +983,15 @@ case $oper in
 				pcs_resgroup_create_ldiskfs_ost $*
 								;;
 'pcs_resgroup_create_zfs')	pcs_resgroup_create_zfs $*	;;
+'pcs_resgroup_create_lvm')	pcs_resgroup_create_lvm $*	;;
 'pcs_stonith_create')		pcs_stonith_create $*		;;
 'pcs_property_set')		pcs_property_set $*		;;
 'pcs_cluster_setup')		pcs_cluster_setup $*		;;
 'pcs_cluster_destroy')		pcs_cluster_destroy $*		;;
+
+# operations for lvm
+'lvm_vg_create')		lvm_vg_create $*		;;
+'lvm_vg_destroy')		lvm_vg_destroy $*		;;
 
 'echo')			echo "$*"				;;	# for test
 *)			errexit "UNKNOWN OPERATION $oper"	;;

@@ -1,0 +1,39 @@
+agents:
+  - mgmtip: 10.5.41.10
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+cluster:
+  name: copyset1
+  hosts:
+    - name: n010
+      authaddr: 10.5.41.10
+      authuser: hacluster
+      authpasswd: hapasswd
+
+      ipmiaddr: 192.168.50.41
+      ipmiuser: yulingz
+      ipmipasswd: W68cfurjYV0314
+
+    - name: n034
+      authaddr: 10.5.41.34
+      authuser: hacluster
+      authpasswd: hapasswd
+
+      ipmiaddr: 192.168.50.76
+      ipmiuser: yulingz
+      ipmipasswd: W68cfurjYV0314
+
+grouptypes:
+  - name: lvm
+    params:
+      volname: vg01-nvmevol
+      nic: ibp161s0
+      traddr: 10.2.1.201
+      transport: rdma
+
+targets:
+  - name: vg01
+    grptype: lvm
+    locations: [ n010, n034 ]
