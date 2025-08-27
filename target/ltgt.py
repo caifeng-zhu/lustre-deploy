@@ -5,7 +5,6 @@ import os
 import yaml
 import argparse
 from typing import List, Dict
-import pyinotify
 
 from tgtconfig import ConfigAgent, ConfigData
 
