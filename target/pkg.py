@@ -30,9 +30,16 @@ def run(cmd):
 
 class PkgAgent:
     def __init__(self, cfg, hosts):
+        self.cfg = cfg
         self.hosts = hosts
-        self.workdir = cfg['workdir']
-        self.script = cfg['script']
+
+    @property
+    def workdir(self):
+        return self.cfg['workdir']
+
+    @property
+    def script(self):
+        return self.cfg['script']
 
     def workfile(self, origfile):
         return f'{self.workdir}/' + os.path.basename(origfile)
@@ -55,8 +62,15 @@ class PkgAgent:
 
 class PkgGroup:
     def __init__(self, pkgs):
-        self.copy_pkgs = [pkg for pkg in pkgs if pkg.endswith('.deb')]
-        self.noncopy_pkgs = [pkg for pkg in pkgs if not pkg.endswith('.deb')]
+        self.pkgs = pkgs
+
+    @property
+    def copy_pkgs(self):
+        return [pkg for pkg in self.pkgs if pkg.endswith('.deb')]
+
+    @property
+    def noncopy_pkgs(self):
+        return [pkg for pkg in self.pkgs if not pkg.endswith('.deb')]
 
     def install(self, agent):
         remote_pkgs = []
@@ -67,7 +81,7 @@ class PkgGroup:
     def uninstall(self, agent):
         remote_pkgs = []
         remote_pkgs.extend(self.noncopy_pkgs)
-        remote_pkgs.extend(agent.copy(*self.copy_pkgs))
+        remote_pkgs.extend([os.path.basename(pkg).partition('-')[0] for pkg in self.copy_pkgs)]
         remote_pkgs.reverse()
         agent.execute('apt_remove', *remote_pkgs)
 

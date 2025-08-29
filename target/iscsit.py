@@ -3,38 +3,102 @@
 import yaml
 import sys
 import argparse
-from tgtconfig import ConfigAgent, ConfigData
+from tgtconfig import ConfigAgent
 
 
-class IscsitTopology:
-    def __init__(self, cfg):
-        cfgdt = ConfigData(cfg)
-        hostid = cfgdt.hostid
-        self.targets = [IscsitTarget(cfg, hostid) for cfg in cfgdt.targets]
+class IscsitPortal:
+    def __init__(self, cfg, iqn):
+        self.cfg = cfg
+        self.iqn = iqn
+
+    @property
+    def addr(self):
+        return self.cfg['addr']
+
+    @property
+    def port(self):
+        return self.cfg['port']
 
     def create(self, agent):
-        for tgt in self.targets:
-            tgt.create(agent)
-        for tgt in self.targets:
-            tgt.connect(agent)
-        agent.execute('iscsit_saveconfig')
+        agent.execute('iscsit_portal_create', self.iqn, self.addr, self.port)
+
+    def connect(self, agent):
+        agent.execute('iscsit_portal_connect', self.iqn, self.addr, self.port)
+
+    def disconnect(self, agent):
+        agent.execute('iscsit_portal_disconnect', self.iqn, self.addr, self.port)
 
     def destroy(self, agent):
-        for tgt in self.targets:
-            tgt.disconnect(agent)
-        for tgt in self.targets:
-            tgt.destroy(agent)
-        agent.execute('iscsit_clear')
+        agent.execute('iscsit_portal_destroy', self.iqn, self.addr, self.port)
+
+
+class IscsitAcl:
+    def __init__(self, acl, iqn):
+        self.acl = acl
+        self.iqn = iqn
+
+    def create(self, agent):
+        agent.execute('iscsit_acl_create', self.iqn, self.acl)
+
+    def destroy(self, agent):
+        pass
+
+
+class IscsitLun:
+    def __init__(self, cfg, hostid, iqn):
+        self.cfg = cfg
+        self.iqn = iqn
+        self.hostid = hostid
+
+    @property
+    def lunid(self):
+        return self.cfg['lunid']
+
+    @property
+    def lunpath(self):
+        return self.cfg['lunpath']
+
+    def create(self, agent):
+        if len(self.lunid) > 16:
+            print("legth of lunid is greater than 16")
+            sys.exit(1)
+        agent.execute('iscsit_lun_create', self.iqn,
+                      f'{self.hostid}-{self.lunid}', self.lunpath)
+
+    def destroy(self, agent):
+        pass
 
 
 class IscsitTarget:
     def __init__(self, cfg, hostid):
-        cfgdt = ConfigData(cfg)
+        self.cfg = cfg
+        self.hostid = hostid
+        self._portals = None
+        self._acls = None
+        self._luns = None
 
-        self.iqn = f'iqn.2024-04.com.ebtech.{hostid}.{cfgdt.name}'
-        self.portals = [IscsitPortal(cfg, self.iqn) for cfg in cfgdt.portals]
-        self.acls = [IscsitAcl(acl, self.iqn) for acl in cfgdt.acls]
-        self.luns = [IscsitLun(cfg, hostid, self.iqn) for cfg in cfgdt.luns]
+    @property
+    def iqn(self):
+        name = self.cfg['name']
+        return f'iqn.2024-04.com.ebtech.{self.hostid}.{name}'
+
+    @property
+    def portals(self):
+        if not self._portals:
+            self._portals = [IscsitPortal(portal, self.iqn) for portal in self.cfg['portals']]
+        return self._portals
+
+    @property
+    def acls(self):
+        if not self._acls:
+            self._acls = [IscsitAcl(acl, self.iqn) for acl in self.cfg['acls']]
+        return self._acls
+
+    @property
+    def luns(self):
+        if not self._luns:
+            self._luns = [IscsitLun(lun, self.hostid, self.iqn) for lun in self.cfg['luns']]
+        return self._luns
 
     def create(self, agent):
         agent.execute('iscsit_iqn_create', self.iqn)
@@ -69,57 +133,31 @@ class IscsitTarget:
         agent.execute('iscsit_iqn_destroy', self.iqn)
 
 
-class IscsitPortal:
-    def __init__(self, cfg, iqn):
-        cfgdt = ConfigData(cfg)
+class IscsitTopology:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self._targets = None
 
-        self.iqn = iqn
-        self.addr = cfgdt.addr
-        self.port = cfgdt.port
-
-    def create(self, agent):
-        agent.execute('iscsit_portal_create', self.iqn, self.addr, self.port)
-
-    def connect(self, agent):
-        agent.execute('iscsit_portal_connect', self.iqn, self.addr, self.port)
-
-    def disconnect(self, agent):
-        agent.execute('iscsit_portal_disconnect', self.iqn, self.addr, self.port)
-
-    def destroy(self, agent):
-        agent.execute('iscsit_portal_destroy', self.iqn, self.addr, self.port)
-
-
-class IscsitAcl:
-    def __init__(self, acl, iqn):
-        self.acl = acl
-        self.iqn = iqn
+    @property
+    def targets(self):
+        if not self._targets:
+            hostid = self.cfg['hostid']
+            self._targets = [IscsitTarget(tgt, hostid) for tgt in self.cfg['targets']]
+        return self._targets
 
     def create(self, agent):
-        agent.execute('iscsit_acl_create', self.iqn, self.acl)
+        for tgt in self.targets:
+            tgt.create(agent)
+        for tgt in self.targets:
+            tgt.connect(agent)
+        agent.execute('iscsit_saveconfig')
 
     def destroy(self, agent):
-        pass
-
-
-class IscsitLun:
-    def __init__(self, cfg, hostid, iqn):
-        cfgdt = ConfigData(cfg)
-
-        self.iqn = iqn
-        self.hostid = hostid
-        self.lunid = cfgdt.lunid
-        self.lunpath = cfgdt.lunpath
-
-    def create(self, agent):
-        if len(self.lunid) > 16:
-            print("legth of lunid is greater than 16")
-            sys.exit(1)
-        agent.execute('iscsit_lun_create', self.iqn,
-                      f'{self.hostid}-{self.lunid}', self.lunpath)
-
-    def destroy(self, agent):
-        pass
+        for tgt in self.targets:
+            tgt.disconnect(agent)
+        for tgt in self.targets:
+            tgt.destroy(agent)
+        agent.execute('iscsit_clear')
 
 
 def build(config):

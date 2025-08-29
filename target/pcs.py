@@ -6,30 +6,49 @@ import os
 import yaml
 import argparse
 from typing import List, Dict
-from tgtconfig import ConfigAgent, ConfigData
+from tgtconfig import ConfigAgent
 
 
 class PcsHost:
     def __init__(self, cfg):
-        cfgdt = ConfigData(cfg)
-
-        self.name = cfgdt.name
-        self.authaddr = cfgdt.authaddr
-        self.authuser = cfgdt.authuser
-        self.authpasswd = cfgdt.authpasswd
-        self.ipmiaddr = cfgdt.ipmiaddr
-        self.ipmiuser = cfgdt.ipmiuser
-        self.ipmipasswd = cfgdt.ipmipasswd
+        self.cfg = cfg
         self.isprimary = False
 
-    def create_auth(self, agent):
-        agent.execute('pcs_host_auth', self.name, self.authaddr,
-                      self.authuser, self.authpasswd)
+    @property
+    def name(self):
+        return self.cfg['name']
+
+    @property
+    def authaddr(self):
+        return self.cfg['authaddr']
+
+    @property
+    def authuser(self):
+        return self.cfg['authuser']
+
+    @property
+    def authpasswd(self):
+        return self.cfg['authpasswd']
+
+    @property
+    def ipmiaddr(self):
+        return self.cfg['ipmiaddr']
+
+    @property
+    def ipmiuser(self):
+        return self.cfg['ipmiuser']
+
+    @property
+    def ipmipasswd(self):
+        return self.cfg['ipmipasswd']
 
     @property
     def name_addr(self):
         return f"{self.name} addr={self.authaddr}"
 
+    def create_auth(self, agent):
+        agent.execute('pcs_host_auth', self.name, self.authaddr,
+                      self.authuser, self.authpasswd)
 
     def create_stonith(self, agent):
         if self.isprimary:
@@ -54,18 +73,33 @@ class PcsHost:
 
 class PcsGroupType:
     def __init__(self, cfg):
-        cfgdt = ConfigData(cfg)
-        self.name = cfgdt.name
-        self.params = [f'{k}={v}' for k, v in cfgdt.params.items()]
+        self.cfg = cfg
+
+    @property
+    def name(self):
+        return self.cfg['name']
+
+    @property
+    def params(self):
+        return [f'{k}={v}' for k, v in self.cfg['params'].items()]
 
 
 class PcsTarget:
     def __init__(self, cfg, grptypes):
-        cfgdt = ConfigData(cfg)
+        self.cfg = cfg
+        self.grptypes = grptypes
 
-        self.name = cfgdt.name
-        self.grptype = grptypes[cfgdt.grptype]
-        self.locations = cfgdt.locations
+    @property
+    def name(self):
+        return self.cfg['name']
+
+    @property
+    def grptype(self):
+        return self.grptypes[self.cfg['grptype']]
+
+    @property
+    def locations(self):
+        return self.cfg['locations']
 
     def create(self, agent):
         cmd = f'pcs_resgroup_create_{self.grptype.name}'
@@ -74,19 +108,27 @@ class PcsTarget:
                       f"{self.locations[1]}=100",
                       *self.grptype.params)
 
-
 class PcsCluster:
     def __init__(self, cfg, targets):
-        cfgdt = ConfigData(cfg)
-
-        self.name = cfgdt.name
+        self.cfg = cfg
         self.targets = targets
-        self.hosts = [PcsHost(cfg) for cfg in cfgdt.hosts]
-        if len(self.hosts) == 2:
+        self._hosts = None
+
+    @property
+    def name(self):
+        return self.cfg['name']
+
+    @property
+    def hosts(self):
+        if self._hosts:
+            return self._hosts
+        self._hosts = [PcsHost(host) for host in self.cfg['hosts']]
+        if len(self._hosts) == 2:
             # for a two node topology, the first node is selected as the
             # primary one. the primary node can delay the other node when
             # doing stonith.
-            self.hosts[0].set_primary()
+            self._hosts[0].set_primary()
+        return self._hosts
 
     def create(self, agent):
         for host in self.hosts:

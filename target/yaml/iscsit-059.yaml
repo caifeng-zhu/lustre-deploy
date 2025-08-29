@@ -14,7 +14,7 @@ agents:
     workdir: /tmp/target
     mode: client
 
-hostid: n005
+hostid: n059
 
 targets:
   - name: target0
@@ -22,7 +22,9 @@ targets:
       - addr: 10.20.6.59
         port: 3260
     acls:
-      - "iqn.2004-10.com.ubuntu:01:c6b852bc3730"
+      - "iqn.2004-10.com.ubuntu:01:n059"
+      - "iqn.2004-10.com.ubuntu:01:n099"
+      - "iqn.2004-10.com.ubuntu:01:n100"
     luns:
       - lunid: 0:2:4:0
         lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:4:0
