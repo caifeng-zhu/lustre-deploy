@@ -1,0 +1,53 @@
+client:
+  workdir: /tmp/client-deploy
+  agent: cliagent.sh
+
+host: h800
+
+# the order is important: for install, all files are installed in
+# the sequencial order as configured; for uninstall, all files
+# are uninstalled in reverse order.
+lfs:
+  pkgs:
+    - lustre/ddn/lustre-client-modules-5.15.0-94-generic_2.14.0-ddn85-1_amd64.deb
+    - lustre/ddn/lustre-client-utils_2.14.0-ddn85-1_amd64.deb
+
+  networks:
+    - net: tcp0
+      nics: bond0
+
+    - net: o2ib1
+      nics: ibs200
+
+  routes:
+    - net: o2ib
+      nid: 10.20.1.7@tcp
+
+    - net: o2ib2
+      nid: 10.20.1.8@tcp
+
+  mounts:
+    - srcpath: 10.5.1.45@tcp:/test1/dev_cn_beijing1_shared_hdd
+      dstpath: /mnt/dev_cn_beijing1_shared_hdd
+      options: defaults,nofail,retry=3
+
+    - srcpath: 10.5.1.45@tcp:/test1/dev_cn_beijing1_shared_nvme
+      dstpath: /mnt/dev_cn_beijing1_shared_nvme
+      options: defaults,nofail,retry=3
+
+lvm:
+  pkgs:
+    - nvme-cli
+    - sanlock
+    - lvm2-lockd
+    - lvm/lvm-agent_1.0-1_amd64.deb # nvme-rdma.ko sanlock lvm.conf lvm lvmagnet lvmagent.service
+
+  nvmets:
+    - traddr: 10.2.1.4
+      host-traddr: 10.2.0.0/16
+    - traddr: 10.2.1.8
+      host-traddr: 10.2.0.0/16
+
+  vgs:
+    - vg01
+    - vg02

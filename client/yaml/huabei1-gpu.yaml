@@ -1,0 +1,47 @@
+client:
+  workdir: /tmp/client-deploy
+  agent: cliagent.sh
+
+# the order is important: for install, all files are installed in
+# the sequencial order as configured; for uninstall, all files
+# are uninstalled in reverse order.
+lfs:
+  pkgs:
+    - lustre/ddn/lustre-client-modules-5.15.0-94-generic_2.14.0-ddn85-1_amd64.deb
+    - lustre/ddn/lustre-client-utils_2.14.0-ddn85-1_amd64.deb
+
+  networks:
+    - net: tcp0
+      nics: bond0
+
+    - net: o2ib1
+      nics: ibs200
+
+  routes:
+    - net: o2ib
+      nid: 10.20.1.7@tcp
+
+  mounts:
+    - srcpath: 10.2.1.131@o2ib,10.2.2.131@o2ib:10.2.1.132@o2ib,10.2.2.132@o2ib:/es01/hdd/prod_cn_huabei1_shared_hdd
+      dstpath: /mnt/prod_cn_huabei1_shared_hdd
+      options: defaults,nofail,retry=3
+
+    - srcpath: 10.2.23.112@o2ib1:10.2.23.116@o2ib1:/kafa01/prod_cn_huabei1_shared_nvme
+      dstpath: /mnt/prod_cn_huabei1_shared_nvme
+      options: defaults,nofail,retry=3
+
+    - srcpath: 10.5.6.2@tcp:10.5.6.26@tcp:/roimgs
+      dstpath: /public
+      options: defaults,ro,nofail,retry=3
+
+lvm:
+  pkgs:
+    - nvme-cli
+    - lvm/lvm-agent_1.0-1_amd64.deb # nvme-rdma.ko sanlock lvm.conf lvm lvmagnet lvmagent.service
+
+  nvmets:
+    - traddr: 10.2.1.201 # dummy, not exported yet
+      host-traddr: 10.2.0.0/16
+
+  vgs:
+    - vgk8s01
