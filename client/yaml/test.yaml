@@ -38,15 +38,18 @@ lfs:
 lvm:
   pkgs:
     - nvme-cli
-    - sanlock
-    - lvm2-lockd
-    - lvm/lvm-agent_1.0-1_amd64.deb # nvme-rdma.ko sanlock lvm.conf lvm lvmagnet lvmagent.service
+    - lvm/lvmagent_1.0.deb
 
   nvmets:
-    - traddr: 10.2.1.4
+    - traddr: 10.2.1.201
       host-traddr: 10.2.0.0/16
-    - traddr: 10.2.1.8
+      transport: rdma
+      trsvcid: 4420
+
+    - traddr: 10.5.41.201
       host-traddr: 10.2.0.0/16
+      transport: tcp
+      trsvcid: 4420
 
   vgs:
     - vg01

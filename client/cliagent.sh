@@ -70,7 +70,7 @@ lfs_chk_networks() {
 		shift 2
 
 		net=${net%[0-9]}
-		ipaddr=$(ip -4 -br addr show dev bond0 | awk '$2=="UP" {print $3}' | sed -e 's/\/.*$//g')
+		ipaddr=$(ip -4 -br addr show dev $nics | awk '$2=="UP" {print $3}' | sed -e 's/\/.*$//g')
 		if [ -z $ipaddr ]; then
 			errexit "can't find ipaddr from $nics"
 		fi
@@ -199,21 +199,23 @@ lfs_dump_mounts() {
 }
 
 lvm_add_nvmets() {
-	local traddr htraddr append
-	local cfgline="--transport=rdma --trsvcid=4420 --nr-io-queues=4 --ctrl-loss-tmo=3 --reconnect-delay=1 --keep-alive-tmo=1"
+	local traddr htraddr transport trsvcid append
+	local cfgline="--nr-io-queues=4 --ctrl-loss-tmo=20 --reconnect-delay=1 --keep-alive-tmo=1"
 
 	append=""
 	while [ ${#*} -gt 0 ]; do
 		traddr=$1
 		htraddr=$2
-		shift 2
+		transport=$3
+		trsvcid=$4
+		shift 4
 
 		htraddr=$(ip -4 -br addr show to $htraddr | awk '$2=="UP" {print $3}' | sed -e 's/\/.*$//g')
 		if [ -z htraddr ]; then
 			errexit "can't find $htraddr"
 		fi
 
-		echo "$cfgline --traddr=$traddr --host-traddr=$htraddr" | tee $append /etc/nvme/discovery.conf
+		echo "$cfgline --traddr=$traddr --host-traddr=$htraddr --transport=$transport --trsvcid=$trsvcid" | tee $append /etc/nvme/discovery.conf
 		append='-a'
 	done
 }

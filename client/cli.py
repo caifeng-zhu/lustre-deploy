@@ -231,7 +231,7 @@ class LvmNvmets(ClientItem):
 
     @property
     def nvmets(self):
-        return [f"{nvmet['traddr']} {nvmet['host-traddr']}" for nvmet in self.cfg]
+        return [f"{nvmet['traddr']} {nvmet['host-traddr']} {nvmet['transport']} {nvmet['trsvcid']}" for nvmet in self.cfg]
 
     def install(self, dispacher):
         dispacher.execute("lvm_add_nvmets", *self.nvmets)
