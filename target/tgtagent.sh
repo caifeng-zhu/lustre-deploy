@@ -744,9 +744,79 @@ pcs_stonith_create() {
 	runcmd pcs stonith create $name ${params[@]}
 }
 
-pcs_resgroup_create_ldiskfs_mdt() {
-	local tgtname=$1
-	local locations=( $2 $3 )
+pcs_resgroup_create() {
+	local grptype=$1
+	local grpname=$2
+	local locations=( $3 $4 )
+	shift 4
+	local params=( $* )
+	local -A pmap
+
+	for kv in ${params[@]}; do
+		key=${kv%%=*}
+		val=${kv#*=}
+		pmap[$key]=$val
+	done
+
+	case $grptype in
+	ldiskfs_mdt|ldiskfs_ost)
+		local lfsname=${pmap['lfsname']}
+		local tgtname=${pmap['tgtname']}
+
+		if [ "$grptype" = 'ldiskfs_ost' ]; then
+			runcmd pcs resource create $tgtname-journal \
+				ocf:heartbeat:mdraid \
+				md_dev=/dev/md/$tgtname-journal \
+				mdadm_conf=/etc/mdadm/$tgtname.conf \
+				--group $grpname
+		fi
+
+		runcmd pcs resource create $tgtname-data \
+			ocf:heartbeat:mdraid \
+			md_dev=/dev/md/$tgtname-data \
+			mdadm_conf=/etc/mdadm/$tgtname.conf \
+			--group $grpname
+
+		runcmd pcs resource create $tgtname-lustre \
+			ocf:heartbeat:Lustre \
+			target=/dev/md/$tgtname-data \
+			mountpoint=/var/lib/lustre/${lfsname}/$tgtname \
+			--group $grpname
+		;;
+	nvmet_subsys)
+		local tgtname=${pmap['tgtname']}
+		local nqn=${pmap['nqn']}
+		local volname=${pmap['volname']}
+
+		runcmd pcs resource create $tgtname-mdraid \
+			ocf:heartbeat:mdraid \
+			md_dev=/dev/md/$volname \
+			mdadm_conf=/etc/mdadm/$tgtname.conf \
+			--group $grpname
+
+		runcmd pcs resource create $tgtname-nvmet-subsystem \
+			ocf:heartbeat:nvmet-subsystem \
+			nqn=$nqn \
+			--group $grpname
+
+		runcmd pcs resource create $tgtname-nvmet-namespace \
+			ocf:heartbeat:nvmet-namespace \
+			backing_path=/dev/md/$volname \
+			namespace_id=1 \
+			nqn=$nqn \
+			uuid=$(uuidgen) \
+			--group $grpname
+
+		;;
+	esac
+
+	runcmd pcs constraint location $grpname prefers ${locations[@]}
+}
+
+pcs_resgroup_create_ordered() {
+	local grptype=$1
+	local grpname=$2
+	local predecessor=$3
 	shift 3
 	local params=( $* )
 	local -A pmap
@@ -756,121 +826,42 @@ pcs_resgroup_create_ldiskfs_mdt() {
 		val=${kv#*=}
 		pmap[$key]=$val
 	done
-	local lfsname=${pmap['lfsname']}
 
-	runcmd pcs resource create $tgtname-data \
-		ocf:heartbeat:mdraid \
-		md_dev=/dev/md/$tgtname-data \
-		mdadm_conf=/etc/mdadm/$tgtname.conf \
-		--group $tgtname-group
+	case $grptype in
+	nvmet_port)
+		local tgtname=${pmap['tgtname']}
+		local portid=${pmap['portid']}
+		local traddr=${pmap['traddr']}
+		local trsvcid=${pmap['trsvcid']}
+		local transport=${pmap['transport']}
+		local nic=${pmap['nic']}
+		local nqn=${pmap['nqn']}
 
-	runcmd pcs resource create $tgtname-lustre \
-		ocf:heartbeat:Lustre \
-		target=/dev/md/$tgtname-data \
-		mountpoint=/var/lib/lustre/${lfsname}/$tgtname \
-		--group $tgtname-group
+		runcmd pcs resource create $tgtname-virtualip-$portid \
+			ocf:heartbeat:IPaddr2 \
+			arp_sender=iputils_arping \
+			cidr_netmask=32 \
+			ip=$traddr \
+			nic=$nic \
+			--group $grpname
 
-	runcmd pcs constraint location $tgtname-group prefers ${locations[@]}
-}
+		# port id 0 is used for local export by default
+		runcmd pcs resource create $tgtname-nvmet-port$portid \
+			ocf:heartbeat:nvmet-port \
+			addr=$traddr \
+			addr_fam=ipv4 \
+			nqns=$nqn \
+			port_id=$portid \
+			svcid=$trsvcid \
+			type=$transport \
+			--group $grpname
+		;;
+	*)
+		;;
+	esac
 
-pcs_resgroup_create_ldiskfs_ost() {
-	local tgtname=$1
-	local locations=( $2 $3 )
-	shift 3
-	local params=( $* )
-	local -A pmap
-
-	for kv in ${params[@]}; do
-		key=${kv%%=*}
-		val=${kv#*=}
-		pmap[$key]=$val
-	done
-	local lfsname=${pmap['lfsname']}
-
-	runcmd pcs resource create $tgtname-journal \
-		ocf:heartbeat:mdraid \
-		md_dev=/dev/md/$tgtname-journal \
-		mdadm_conf=/etc/mdadm/$tgtname.conf \
-		--group $tgtname-group
-
-	runcmd pcs resource create $tgtname-data \
-		ocf:heartbeat:mdraid \
-		md_dev=/dev/md/$tgtname-data \
-		mdadm_conf=/etc/mdadm/$tgtname.conf \
-		--group $tgtname-group
-
-	runcmd pcs resource create $tgtname-lustre \
-		ocf:heartbeat:Lustre \
-		target=/dev/md/$tgtname-data \
-		mountpoint=/var/lib/lustre/${lfsname}/$tgtname \
-		--group $tgtname-group
-
-	runcmd pcs constraint location $tgtname-group prefers ${locations[@]}
-}
-
-pcs_resgroup_create_zfs() {
-	# TODO
-	return 0
-}
-
-pcs_resgroup_create_lvm() {
-	local tgtname=$1
-	local locations=( $2 $3 )
-	shift 3
-	local params=( $* )
-	local -A pmap
-
-	for kv in ${params[@]}; do
-		key=${kv%%=*}
-		val=${kv#*=}
-		pmap[$key]=$val
-	done
-	local volname=${pmap['volname']}
-	local nic=${pmap['nic']}
-	local traddr=${pmap['traddr']}
-	local transport=${pmap['transport']}
-	local nqn=n${traddr##*.}-$volname
-	local uuid=$(uuidgen)
-
-	runcmd pcs resource create $tgtname-mdraid \
-		ocf:heartbeat:mdraid \
-		md_dev=/dev/md/$volname \
-		mdadm_conf=/etc/mdadm/$tgtname.conf \
-		--group $tgtname-group
-
-	runcmd pcs resource create $tgtname-virtualip \
-		ocf:heartbeat:IPaddr2 \
-		arp_sender=iputils_arping \
-		cidr_netmask=32 \
-		ip=$traddr \
-		nic=$nic \
-		--group $tgtname-group
-
-	runcmd pcs resource create $tgtname-nvmet-subsystem \
-		ocf:heartbeat:nvmet-subsystem \
-		nqn=$nqn \
-		--group $tgtname-group
-
-	runcmd pcs resource create $tgtname-nvmet-namespace \
-		ocf:heartbeat:nvmet-namespace \
-		backing_path=/dev/md/$volname \
-		namespace_id=1 \
-		nqn=$nqn \
-		uuid=$uuid \
-		--group $tgtname-group
-
-	# port id 0 is used for local export by default
-	runcmd pcs resource create $tgtname-nvmet-port \
-		ocf:heartbeat:nvmet-port \
-		addr=$traddr \
-		addr_fam=ipv4 \
-		nqns=$nqn \
-		port_id=1 \
-		svcid=4420 \
-		type=$transport \
-		--group $tgtname-group
-
-	runcmd pcs constraint location $tgtname-group prefers ${locations[@]}
+	runcmd pcs constraint order $predecessor then $grpname
+	runcmd pcs constraint colocation add $grpname with $predecessor
 }
 
 pcs_property_set() {
@@ -976,12 +967,8 @@ case $oper in
 
 # operations for pcs
 'pcs_host_auth')		pcs_host_auth $*		;;
-'pcs_resgroup_create_ldiskfs_mdt')
-				pcs_resgroup_create_ldiskfs_mdt $*
-								;;
-'pcs_resgroup_create_ldiskfs_ost')
-				pcs_resgroup_create_ldiskfs_ost $*
-								;;
+'pcs_resgroup_create') 		pcs_resgroup_create $* 		;;
+'pcs_resgroup_create_ordered') 	pcs_resgroup_create_ordered $* 	;;
 'pcs_resgroup_create_zfs')	pcs_resgroup_create_zfs $*	;;
 'pcs_resgroup_create_lvm')	pcs_resgroup_create_lvm $*	;;
 'pcs_stonith_create')		pcs_stonith_create $*		;;

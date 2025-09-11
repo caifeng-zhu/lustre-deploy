@@ -71,7 +71,7 @@ class PcsHost:
         self.isprimary = True
 
 
-class PcsGroupType:
+class PcsGroup:
     def __init__(self, cfg):
         self.cfg = cfg
 
@@ -80,38 +80,39 @@ class PcsGroupType:
         return self.cfg['name']
 
     @property
-    def params(self):
-        return [f'{k}={v}' for k, v in self.cfg['params'].items()]
-
-
-class PcsTarget:
-    def __init__(self, cfg, grptypes):
-        self.cfg = cfg
-        self.grptypes = grptypes
-
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
     def grptype(self):
-        return self.grptypes[self.cfg['grptype']]
+        return self.cfg['grptype']
 
     @property
     def locations(self):
         return self.cfg['locations']
 
+    @property
+    def predecessor(self):
+        return self.cfg['predecessor']
+
+    @property
+    def params(self):
+        return [f'{k}={v}' for k, v in self.cfg['params'].items()]
+
     def create(self, agent):
-        cmd = f'pcs_resgroup_create_{self.grptype.name}'
-        agent.execute(cmd, self.name,
-                      f"{self.locations[0]}=200",
-                      f"{self.locations[1]}=100",
-                      *self.grptype.params)
+        if 'locations' in self.cfg:
+            agent.execute('pcs_resgroup_create',
+                          self.grptype, self.name,
+                          f"{self.locations[0]}=200",
+                          f"{self.locations[1]}=100",
+                          *self.params)
+        if 'predecessor' in self.cfg:
+            agent.execute('pcs_resgroup_create_ordered',
+                          self.grptype, self.name,
+                          self.predecessor, 
+                          *self.params)
+
 
 class PcsCluster:
-    def __init__(self, cfg, targets):
+    def __init__(self, cfg, groups):
         self.cfg = cfg
-        self.targets = targets
+        self.groups = groups
         self._hosts = None
 
     @property
@@ -139,8 +140,8 @@ class PcsCluster:
         if len(self.hosts) == 2:
             agent.execute('pcs_property_set', 'no-quorum-policy=ignore')
 
-        for tgt in self.targets:
-            tgt.create(agent)
+        for grp in self.groups:
+            grp.create(agent)
 
         for host in self.hosts:
             host.create_stonith(agent)
@@ -150,15 +151,8 @@ class PcsCluster:
 
 
 def build(config):
-    grptypes = {
-        cfg['name'] : PcsGroupType(cfg)
-        for cfg in config['grouptypes']
-    }
-    targets = [
-        PcsTarget(cfg, grptypes)
-        for cfg in config['targets']
-    ]
-    cluster = PcsCluster(config['cluster'], targets)
+    groups = [PcsGroup(cfg) for cfg in config['groups']]
+    cluster = PcsCluster(config['cluster'], groups)
     return ConfigAgent.from_config(config['agents']), cluster
 
 

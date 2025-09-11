@@ -34,30 +34,38 @@ cluster:
       ipmiuser: zhucaifeng
       ipmipasswd: LbV3sxXPp0zcf
 
-grouptypes:
-  - name: ldiskfs_mdt
-    params:
-      lfsname: afa01
-
-  - name: ldiskfs_ost
-    params:
-      lfsname: afa01
-
-targets:
-  - name: mgt
+groups:
+  - name: mgt-group
     grptype: ldiskfs_mdt
     locations: [ n059, n099 ]
-  - name: mdt0
+    params:
+      tgtname: mgt
+      lfsname: afa01
+
+  - name: mdt0-group
     grptype: ldiskfs_mdt
     locations: [ n059, n099 ]
-  - name: ost0
+    params:
+      tgtname: mdt0
+      lfsname: afa01
+
+  - name: ost0-group
     grptype: ldiskfs_ost
     locations: [ n059, n099 ]
+    params:
+      tgtname: ost0
+      lfsname: afa01
 
-  - name: ost1
+  - name: ost1-group
     grptype: ldiskfs_ost
     locations: [ n099, n100 ]
+    params:
+      tgtname: ost1
+      lfsname: afa01
 
-  - name: ost2
+  - name: ost2-group
     grptype: ldiskfs_ost
     locations: [ n100, n059 ]
+    params:
+      tgtname: ost2
+      lfsname: afa01
