@@ -4,68 +4,97 @@ agents:
     workdir: /tmp/target
     mode: active
 
-cluster:
-  name: copyset1
-  hosts:
-    - name: n059
-      authaddr: 10.20.6.59
-      authuser: hacluster
-      authpasswd: hapasswd
+name: copyset1
+hosts:
+  - name: n059
+    authaddr: 10.20.6.59
+    authuser: hacluster
+    authpasswd: hapasswd
 
-      ipmiaddr: 172.16.1.59
-      ipmiuser: zhucaifeng
-      ipmipasswd: LbV3sxXPp0zcf
+    ipmiaddr: 172.16.1.59
+    ipmiuser: zhucaifeng
+    ipmipasswd: LbV3sxXPp0zcf
 
-    - name: n099
-      authaddr: 10.20.6.99
-      authuser: hacluster
-      authpasswd: hapasswd
+  - name: n099
+    authaddr: 10.20.6.99
+    authuser: hacluster
+    authpasswd: hapasswd
 
-      ipmiaddr: 172.16.1.99
-      ipmiuser: zhucaifeng
-      ipmipasswd: LbV3sxXPp0zcf
+    ipmiaddr: 172.16.1.99
+    ipmiuser: zhucaifeng
+    ipmipasswd: LbV3sxXPp0zcf
 
-    - name: n100
-      authaddr: 10.20.6.100
-      authuser: hacluster
-      authpasswd: hapasswd
+  - name: n100
+    authaddr: 10.20.6.100
+    authuser: hacluster
+    authpasswd: hapasswd
 
-      ipmiaddr: 172.16.1.100
-      ipmiuser: zhucaifeng
-      ipmipasswd: LbV3sxXPp0zcf
+    ipmiaddr: 172.16.1.100
+    ipmiuser: zhucaifeng
+    ipmipasswd: LbV3sxXPp0zcf
+
+resources:
+  - name: mgt-data
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/mgt-data, mdadm_conf: /etc/mdadm/mgt.conf }
+  - name: mgt-lustre
+    ra: ocf:heartbeat:Lustre
+    params: { target: /dev/md/mgt-data, mountpoint: /var/lib/lustre/afa01/mgt }
+
+  - name: mdt0-data
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/mdt0-data, mdadm_conf: /etc/mdadm/mdt0.conf }
+  - name: mdt0-lustre
+    ra: ocf:heartbeat:Lustre
+    params: { target: /dev/md/mdt0-data, mountpoint: /var/lib/lustre/afa01/mdt0 }
+
+  - name: ost0-journal
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/ost0-journal, mdadm_conf: /etc/mdadm/ost0.conf }
+  - name: ost0-data
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/ost0-data, mdadm_conf: /etc/mdadm/ost0.conf }
+  - name: ost0-lustre
+    ra: ocf:heartbeat:Lustre
+    params: { target: /dev/md/ost0-data, mountpoint: /var/lib/lustre/afa01//ost0 }
+
+  - name: ost1-journal
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/ost1-journal, mdadm_conf: /etc/mdadm/ost1.conf }
+  - name: ost1-data
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/ost1-data, mdadm_conf: /etc/mdadm/ost1.conf }
+  - name: ost1-lustre
+    ra: ocf:heartbeat:Lustre
+    params: { target: /dev/md/ost1-data, mountpoint: /var/lib/lustre/afa01//ost1 }
+
+  - name: ost2-journal
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/ost2-journal, mdadm_conf: /etc/mdadm/ost2.conf }
+  - name: ost2-data
+    ra: ocf:heartbeat:mdraid
+    params: { md_dev: /dev/md/ost2-data, mdadm_conf: /etc/mdadm/ost2.conf }
+  - name: ost2-lustre
+    ra: ocf:heartbeat:Lustre
+    params: { target: /dev/md/ost2-data, mountpoint: /var/lib/lustre/afa01//ost2 }
 
 groups:
   - name: mgt-group
-    grptype: ldiskfs_mdt
     locations: [ n059, n099 ]
-    params:
-      tgtname: mgt
-      lfsname: afa01
+    resources: [ mgt-data, mgt-lustre ]
 
   - name: mdt0-group
-    grptype: ldiskfs_mdt
     locations: [ n059, n099 ]
-    params:
-      tgtname: mdt0
-      lfsname: afa01
+    resources: [ mdt0-data, mdt0-lustre ]
 
   - name: ost0-group
-    grptype: ldiskfs_ost
     locations: [ n059, n099 ]
-    params:
-      tgtname: ost0
-      lfsname: afa01
+    resources: [ ost0-journal, ost0-data, ost0-lustre ]
 
   - name: ost1-group
-    grptype: ldiskfs_ost
     locations: [ n099, n100 ]
-    params:
-      tgtname: ost1
-      lfsname: afa01
+    resources: [ ost1-journal, ost1-data, ost1-lustre ]
 
   - name: ost2-group
-    grptype: ldiskfs_ost
     locations: [ n100, n059 ]
-    params:
-      tgtname: ost2
-      lfsname: afa01
+    resources: [ ost2-journal, ost2-data, ost2-lustre ]

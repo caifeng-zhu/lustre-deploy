@@ -185,8 +185,9 @@ iscsit_iqn_create() {
 
 	case $mode in
 	active)
+		runcmd targetcli /iscsi set global auto_add_default_portal=false
 		runcmd targetcli /iscsi create $iqn
-		runcmd targetcli /iscsi/$iqn/tpg1/portals delete 0.0.0.0 3260
+		targetcli /iscsi/$iqn/tpg1 set attribute demo_mode_discovery=0
 		;;
 	client)
 		;;
@@ -198,6 +199,7 @@ iscsit_iqn_destroy() {
 
 	case $mode in
 	active)
+		runcmd targetcli /iscsi delete $iqn
 		;;
 	client)
 		;;
@@ -274,6 +276,21 @@ iscsit_lun_create() {
 	active)
 		runcmd targetcli /backstores/block create $lunid $lunpath
 		runcmd targetcli /iscsi/$iqn/tpg1/luns create /backstores/block/$lunid
+		;;
+	client)
+		;;
+	esac
+}
+
+iscsit_lun_destroy() {
+	local iqn=$1
+	local lunid=$2
+	local lunpath=$3
+
+	case $mode in
+	active)
+		runcmd targetcli /iscsi/$iqn/tpg1/luns delete /backstores/block/$lunid
+		runcmd targetcli /backstores/block delete $lunid
 		;;
 	client)
 		;;
@@ -744,124 +761,34 @@ pcs_stonith_create() {
 	runcmd pcs stonith create $name ${params[@]}
 }
 
-pcs_resgroup_create() {
-	local grptype=$1
-	local grpname=$2
-	local locations=( $3 $4 )
-	shift 4
+pcs_resource_create() {
+	local name=$1
+	local ra=$2
+	shift 2
 	local params=( $* )
-	local -A pmap
 
-	for kv in ${params[@]}; do
-		key=${kv%%=*}
-		val=${kv#*=}
-		pmap[$key]=$val
-	done
+	runcmd pcs resource create $name $ra ${params[@]}
+}
 
-	case $grptype in
-	ldiskfs_mdt|ldiskfs_ost)
-		local lfsname=${pmap['lfsname']}
-		local tgtname=${pmap['tgtname']}
+pcs_resgroup_create() {
+	local name=$1
+	local locations=( $2 $3 )
+	shift 3
+	local resources=( $* )
 
-		if [ "$grptype" = 'ldiskfs_ost' ]; then
-			runcmd pcs resource create $tgtname-journal \
-				ocf:heartbeat:mdraid \
-				md_dev=/dev/md/$tgtname-journal \
-				mdadm_conf=/etc/mdadm/$tgtname.conf \
-				--group $grpname
-		fi
-
-		runcmd pcs resource create $tgtname-data \
-			ocf:heartbeat:mdraid \
-			md_dev=/dev/md/$tgtname-data \
-			mdadm_conf=/etc/mdadm/$tgtname.conf \
-			--group $grpname
-
-		runcmd pcs resource create $tgtname-lustre \
-			ocf:heartbeat:Lustre \
-			target=/dev/md/$tgtname-data \
-			mountpoint=/var/lib/lustre/${lfsname}/$tgtname \
-			--group $grpname
-		;;
-	nvmet_subsys)
-		local tgtname=${pmap['tgtname']}
-		local nqn=${pmap['nqn']}
-		local volname=${pmap['volname']}
-
-		runcmd pcs resource create $tgtname-mdraid \
-			ocf:heartbeat:mdraid \
-			md_dev=/dev/md/$volname \
-			mdadm_conf=/etc/mdadm/$tgtname.conf \
-			--group $grpname
-
-		runcmd pcs resource create $tgtname-nvmet-subsystem \
-			ocf:heartbeat:nvmet-subsystem \
-			nqn=$nqn \
-			--group $grpname
-
-		runcmd pcs resource create $tgtname-nvmet-namespace \
-			ocf:heartbeat:nvmet-namespace \
-			backing_path=/dev/md/$volname \
-			namespace_id=1 \
-			nqn=$nqn \
-			uuid=$(uuidgen) \
-			--group $grpname
-
-		;;
-	esac
-
-	runcmd pcs constraint location $grpname prefers ${locations[@]}
+	runcmd pcs resource group add $name ${resources[@]}
+	runcmd pcs constraint location $name prefers ${locations[@]}
 }
 
 pcs_resgroup_create_ordered() {
-	local grptype=$1
-	local grpname=$2
-	local predecessor=$3
-	shift 3
-	local params=( $* )
-	local -A pmap
+	local name=$1
+	local predecessor=$2
+	shift 2
+	local resources=( $* )
 
-	for kv in ${params[@]}; do
-		key=${kv%%=*}
-		val=${kv#*=}
-		pmap[$key]=$val
-	done
-
-	case $grptype in
-	nvmet_port)
-		local tgtname=${pmap['tgtname']}
-		local portid=${pmap['portid']}
-		local traddr=${pmap['traddr']}
-		local trsvcid=${pmap['trsvcid']}
-		local transport=${pmap['transport']}
-		local nic=${pmap['nic']}
-		local nqn=${pmap['nqn']}
-
-		runcmd pcs resource create $tgtname-virtualip-$portid \
-			ocf:heartbeat:IPaddr2 \
-			arp_sender=iputils_arping \
-			cidr_netmask=32 \
-			ip=$traddr \
-			nic=$nic \
-			--group $grpname
-
-		# port id 0 is used for local export by default
-		runcmd pcs resource create $tgtname-nvmet-port$portid \
-			ocf:heartbeat:nvmet-port \
-			addr=$traddr \
-			addr_fam=ipv4 \
-			nqns=$nqn \
-			port_id=$portid \
-			svcid=$trsvcid \
-			type=$transport \
-			--group $grpname
-		;;
-	*)
-		;;
-	esac
-
-	runcmd pcs constraint order $predecessor then $grpname
-	runcmd pcs constraint colocation add $grpname with $predecessor
+	runcmd pcs resource group add $name ${resources[@]}
+	runcmd pcs constraint order $predecessor then $name
+	runcmd pcs constraint colocation add $name with $predecessor
 }
 
 pcs_property_set() {
@@ -940,8 +867,8 @@ case $oper in
 'iscsit_portal_destroy')	iscsit_portal_destroy $*	;;
 'iscsit_acl_create')		iscsit_acl_create $*		;;
 'iscsit_lun_create')		iscsit_lun_create $*		;;
+'iscsit_lun_destroy')		iscsit_lun_destroy $*		;;
 'iscsit_saveconfig')		iscsit_saveconfig $*		;;
-'iscsit_clear')			iscsit_clear $*			;;
 
 # operations for target on ldiskfs
 'parted_label')			parted_label $*			;;
@@ -967,10 +894,9 @@ case $oper in
 
 # operations for pcs
 'pcs_host_auth')		pcs_host_auth $*		;;
+'pcs_resource_create')		pcs_resource_create $*		;;
 'pcs_resgroup_create') 		pcs_resgroup_create $* 		;;
 'pcs_resgroup_create_ordered') 	pcs_resgroup_create_ordered $* 	;;
-'pcs_resgroup_create_zfs')	pcs_resgroup_create_zfs $*	;;
-'pcs_resgroup_create_lvm')	pcs_resgroup_create_lvm $*	;;
 'pcs_stonith_create')		pcs_stonith_create $*		;;
 'pcs_property_set')		pcs_property_set $*		;;
 'pcs_cluster_setup')		pcs_cluster_setup $*		;;

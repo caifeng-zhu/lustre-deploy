@@ -70,6 +70,25 @@ class PcsHost:
     def set_primary(self):
         self.isprimary = True
 
+class PcsResource:
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    @property
+    def name(self):
+        return self.cfg['name']
+
+    @property
+    def ra(self):
+        return self.cfg['ra']
+
+    @property
+    def params(self):
+        return [f'{k}={v}' for k, v in self.cfg['params'].items()]
+
+    def create(self, agent):
+        agent.execute('pcs_resource_create', self.name, self.ra, *self.params)
+
 
 class PcsGroup:
     def __init__(self, cfg):
@@ -80,44 +99,48 @@ class PcsGroup:
         return self.cfg['name']
 
     @property
-    def grptype(self):
-        return self.cfg['grptype']
-
-    @property
     def locations(self):
+        if 'locations' not in self.cfg:
+            return None
         return self.cfg['locations']
 
     @property
     def predecessor(self):
+        if 'predecessor' not in self.cfg:
+            return None
         return self.cfg['predecessor']
 
     @property
-    def params(self):
-        return [f'{k}={v}' for k, v in self.cfg['params'].items()]
+    def resources(self):
+        return self.cfg['resources']
 
     def create(self, agent):
-        if 'locations' in self.cfg:
-            agent.execute('pcs_resgroup_create',
-                          self.grptype, self.name,
+        if self.locations:
+            agent.execute('pcs_resgroup_create', self.name,
                           f"{self.locations[0]}=200",
                           f"{self.locations[1]}=100",
-                          *self.params)
-        if 'predecessor' in self.cfg:
-            agent.execute('pcs_resgroup_create_ordered',
-                          self.grptype, self.name,
-                          self.predecessor, 
-                          *self.params)
+                          *self.resources)
+        if self.predecessor:
+            agent.execute('pcs_resgroup_create_ordered', self.name,
+                          self.predecessor, *self.resources)
 
 
 class PcsCluster:
-    def __init__(self, cfg, groups):
+    def __init__(self, cfg):
         self.cfg = cfg
-        self.groups = groups
         self._hosts = None
+        self._resources = None
+        self._groups = None
 
     @property
     def name(self):
         return self.cfg['name']
+
+    @property
+    def stonith_enabled(self):
+        if 'stonith_enabled' not in self.cfg:
+            return True # default is enabled
+        return self.cfg['stonith_enabled']
 
     @property
     def hosts(self):
@@ -131,6 +154,18 @@ class PcsCluster:
             self._hosts[0].set_primary()
         return self._hosts
 
+    @property
+    def resources(self):
+        if not self._resources:
+            self._resources = [PcsResource(res) for res in self.cfg['resources']]
+        return self._resources
+
+    @property
+    def groups(self):
+        if not self._groups:
+            self._groups = [PcsGroup(grp) for grp in self.cfg['groups']]
+        return self._groups
+
     def create(self, agent):
         for host in self.hosts:
             host.create_auth(agent)
@@ -140,9 +175,15 @@ class PcsCluster:
         if len(self.hosts) == 2:
             agent.execute('pcs_property_set', 'no-quorum-policy=ignore')
 
+        for res in self.resources:
+            res.create(agent)
+
         for grp in self.groups:
             grp.create(agent)
 
+        if not self.stonith_enabled:
+            agent.execute('pcs_property_set', 'stonith-enabled=false')
+            return
         for host in self.hosts:
             host.create_stonith(agent)
 
@@ -151,8 +192,7 @@ class PcsCluster:
 
 
 def build(config):
-    groups = [PcsGroup(cfg) for cfg in config['groups']]
-    cluster = PcsCluster(config['cluster'], groups)
+    cluster = PcsCluster(config)
     return ConfigAgent.from_config(config['agents']), cluster
 
 

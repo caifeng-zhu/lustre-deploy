@@ -69,28 +69,58 @@ class LvmVg:
 
         self.device.destroy(agent)
 
+class LvmTopology:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self._vgs = None
+        self._diskgroups = None
+        self._devices = None
+
+    @property
+    def diskgroups(self):
+        if not self._diskgroups:
+            self._diskgroups = {
+                    dg['name']: DiskGroup(dg)
+                    for dg in self.cfg['diskgroups']}
+        return self._diskgroups
+
+    @property
+    def devices(self):
+        if not self._devices:
+            self._devices = {
+                    dev['name']: RaidDevice(dev, self.diskgroups)
+                    for dev in self.cfg['devices']}
+        return self._devices
+
+    @property
+    def vgs(self):
+        if not self._vgs:
+            self._vgs = [LvmVg(vg, self.devices) for vg in self.cfg['vgs']]
+        return self._vgs
+
+    def create(self, agent):
+        for vg in self.vgs:
+            vg.create(agent)
+
+    def destroy(self, agent):
+        for vg in self.vgs:
+            vg.destroy(agent)
+
 
 def build(cfg):
-    diskgroups = {
-            dgc['name']: DiskGroup(dgc)
-            for dgc in cfg['diskgroups']}
-    devices = {
-            devc['name']: RaidDevice(devc, diskgroups)
-            for devc in cfg['devices']}
-
-    vg = LvmVg(cfg['lvm'], devices)
+    topology = LvmTopology(cfg)
     agents = ConfigAgent.from_config(cfg['agents'])
-    return agents, vg
+    return agents, topology
 
 
-def create(agents, vg):
+def create(agents, topology):
     for agent in agents:
-        vg.create(agent)
+        topology.create(agent)
 
 
-def destroy(agents, vg):
+def destroy(agents, topology):
     for agent in agents:
-        vg.destroy(agent)
+        topology.destroy(agent)
 
 
 def main():

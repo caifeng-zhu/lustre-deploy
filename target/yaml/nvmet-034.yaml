@@ -2,18 +2,18 @@ agents:
   - mgmtip: 10.5.41.10
     script: ./tgtagent.sh
     workdir: /tmp/target
-    mode: active
+    mode: client
 
   - mgmtip: 10.5.41.34
     script: ./tgtagent.sh
     workdir: /tmp/target
-    mode: client
+    mode: active
 
-hostid: n10
+hostid: n34
 
 ports:
   - portid: 0
-    traddr: 10.5.41.10
+    traddr: 10.5.41.34
     trsvcid: 4420
     transport: tcp
 

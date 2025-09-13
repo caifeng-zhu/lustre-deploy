@@ -1,0 +1,30 @@
+agents:
+  - mgmtip: 10.5.41.10
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+  - mgmtip: 10.5.41.34
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: client
+
+hostid: n10
+
+targets:
+  - name: internal0
+    portals:
+      - addr: 10.5.41.10
+        port: 3261
+    acls:
+      - "iqn.2004-10.com.ubuntu:01:n10"
+      - "iqn.2004-10.com.ubuntu:01:n34"
+    luns:
+      - lunid: 0:2:4:0
+        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:4:0
+      - lunid: 0:2:5:0
+        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:5:0
+      - lunid: 0:2:6:0
+        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:6:0
+      - lunid: 0:2:7:0
+        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:7:0
