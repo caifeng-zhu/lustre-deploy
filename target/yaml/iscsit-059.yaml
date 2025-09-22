@@ -26,11 +26,15 @@ targets:
       - "iqn.2004-10.com.ubuntu:01:n099"
       - "iqn.2004-10.com.ubuntu:01:n100"
     luns:
-      - lunid: 0:2:4:0
-        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:4:0
-      - lunid: 0:2:5:0
-        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:5:0
-      - lunid: 0:2:6:0
-        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:6:0
-      - lunid: 0:2:7:0
-        lunpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:7:0
+      - lunid: 0
+        devid: 0:2:4:0
+        devpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:4:0
+      - lunid: 1
+        devid: 0:2:5:0
+        devpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:5:0
+      - lunid: 2
+        devid: 0:2:6:0
+        devpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:6:0
+      - lunid: 3
+        devid: 0:2:7:0
+        devpath: /dev/disk/by-path/pci-0000:41:00.0-scsi-0:2:7:0

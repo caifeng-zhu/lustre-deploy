@@ -55,18 +55,23 @@ class IscsitLun:
         return self.cfg['lunid']
 
     @property
-    def lunpath(self):
-        return self.cfg['lunpath']
+    def devid(self):
+        return self.cfg['devid']
+
+    @property
+    def devpath(self):
+        return self.cfg['devpath']
 
     def create(self, agent):
-        if len(self.lunid) > 16:
-            print("legth of lunid is greater than 16")
+        if len(self.devid) > 16:
+            print("length of devid is greater than 16")
             sys.exit(1)
         agent.execute('iscsit_lun_create', self.iqn,
-                      f'{self.hostid}-{self.lunid}', self.lunpath)
+                      f'{self.hostid}-{self.devid}', self.devpath, self.lunid)
 
     def destroy(self, agent):
-        pass
+        agent.execute('iscsit_lun_destroy', self.iqn,
+                      f'{self.hostid}-{self.devid}', self.devpath, self.lunid)
 
 
 class IscsitTarget:

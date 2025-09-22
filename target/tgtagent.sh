@@ -197,6 +197,10 @@ iscsit_iqn_create() {
 iscsit_iqn_destroy() {
 	local iqn=$1
 
+	if [ ! -e /sys/kernel/config/target/iscsi/$iqn ]; then
+		return 0
+	fi
+
 	case $mode in
 	active)
 		runcmd targetcli /iscsi delete $iqn
@@ -269,13 +273,14 @@ iscsit_acl_create() {
 
 iscsit_lun_create() {
 	local iqn=$1
-	local lunid=$2
-	local lunpath=$3
+	local devid=$2
+	local devpath=$3
+	local lunid=$4
 
 	case $mode in
 	active)
-		runcmd targetcli /backstores/block create $lunid $lunpath
-		runcmd targetcli /iscsi/$iqn/tpg1/luns create /backstores/block/$lunid
+		runcmd targetcli /backstores/block create $devid $devpath
+		runcmd targetcli /iscsi/$iqn/tpg1/luns create /backstores/block/$devid $lunid
 		;;
 	client)
 		;;
@@ -284,13 +289,18 @@ iscsit_lun_create() {
 
 iscsit_lun_destroy() {
 	local iqn=$1
-	local lunid=$2
-	local lunpath=$3
+	local devid=$2
+	local devath=$3
+	local lunid=$4
+
+	if [ ! -e /sys/kernel/config/target/iscsi/$iqn ]; then
+		return 0
+	fi
 
 	case $mode in
 	active)
-		runcmd targetcli /iscsi/$iqn/tpg1/luns delete /backstores/block/$lunid
-		runcmd targetcli /backstores/block delete $lunid
+		runcmd targetcli /iscsi/$iqn/tpg1/luns delete $lunid
+		runcmd targetcli /backstores/block delete $devid
 		;;
 	client)
 		;;
@@ -301,16 +311,6 @@ iscsit_saveconfig() {
 	case $mode in
 	active)
 		runcmd targetcli / saveconfig
-		;;
-	client)
-		;;
-	esac
-}
-
-iscsit_clear() {
-	case $mode in
-	active)
-		runcmd targetctl clear
 		;;
 	client)
 		;;
