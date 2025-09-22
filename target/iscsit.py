@@ -157,7 +157,6 @@ class IscsitTopology:
             tgt.disconnect(agent)
         for tgt in self.targets:
             tgt.destroy(agent)
-        agent.execute('iscsit_clear')
 
 
 def build(config):
