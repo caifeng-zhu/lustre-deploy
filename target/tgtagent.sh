@@ -451,7 +451,9 @@ mdraid_new_config() {
 	else
 		echo 'AUTO -1.x' | tee -a /etc/mdadm/mdadm.conf
 	fi
-	runcmd mdadm --examine --scan | grep "$tgtname-" | tee /etc/mdadm/$tgtname.conf
+	set -x
+	mdadm --examine --scan | grep "${tgtname}\>" | tee /etc/mdadm/$tgtname.conf
+	set +x
 }
 
 mdraid_del_config() {
@@ -801,7 +803,7 @@ lvm_do_vg_destroy() {
 	local vgname=$1
 	local volname=$2
 
-	mdraid_start $vgname $volname
+	mdraid_start $volname $volname
 	if [ $? -ne 0 ]; then
 		return 0
 	fi
@@ -814,13 +816,13 @@ lvm_do_vg_destroy() {
 
 lvm_vg_create() {
 	local vgname=$1
-	local volpath=$2
+	local volname=$2
 
-	mdraid_new_config $vgname
+	mdraid_new_config $volname
 
 	case $mode in
 	active)
-		runcmd vgcreate --share --locktype sanlock $vgname $volpath
+		runcmd vgcreate --share --locktype sanlock $vgname /dev/md/$volname
 		runcmd vgchange --lockstop $vgname
 		;;
 	esac
@@ -838,7 +840,7 @@ lvm_vg_destroy() {
 		;;
 	esac
 
-	mdraid_del_config $vgname
+	mdraid_del_config $volname
 }
 
 mode=$1; shift

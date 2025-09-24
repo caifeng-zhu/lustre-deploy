@@ -61,7 +61,7 @@ class LvmVg:
         self.device.create(agent)
 
         cmd = 'lvm_vg_create'
-        agent.execute(cmd, self.name, self.device.devpath)
+        agent.execute(cmd, self.name, self.device.name)
 
     def destroy(self, agent):
         cmd = 'lvm_vg_destroy'
@@ -103,7 +103,7 @@ class LvmTopology:
             vg.create(agent)
 
     def destroy(self, agent):
-        for vg in self.vgs:
+        for vg in self.vgs[::-1]:
             vg.destroy(agent)
 
 
