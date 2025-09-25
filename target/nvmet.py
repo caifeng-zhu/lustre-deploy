@@ -33,12 +33,10 @@ class NvmetPort:
                       self.trsvcid, self.transport)
 
     def add_subsys(self, agent, nqn):
-        agent.execute('nvmet_port_add_subsys', self.portid, self.traddr,
-                      self.trsvcid, self.transport, nqn)
+        agent.execute('nvmet_port_add_subsys', self.portid, nqn)
 
     def del_subsys(self, agent, nqn):
-        agent.execute('nvmet_port_del_subsys', self.portid, self.traddr,
-                      self.trsvcid, self.transport, nqn)
+        agent.execute('nvmet_port_del_subsys', self.portid, nqn)
 
 
 class NvmetNamespace:
@@ -83,8 +81,7 @@ class NvmetSubsys:
             ns.create(agent)
 
     def destroy(self, agent):
-        pass
-        #agent.execute('nvmet_subsys_destroy', self.nqn)
+        agent.execute('nvmet_subsys_destroy', self.nqn)
 
 
 class NvmetTarget:
@@ -92,15 +89,14 @@ class NvmetTarget:
         self.cfg = cfg
         self.hostid = hostid
         self.ports = ports
-        self._subsystes = None
+        self._subsyses = None
 
     @property
     def subsyses(self):
-        if self._subsystes:
-            return self._subsystes
-        self._subsystes = [NvmetSubsys(self.cfg, self.hostid, subsysid)
-                           for subsysid in self.cfg['subsysids']]
-        return self._subsystes
+        if not self._subsyses:
+            self._subsyses = [NvmetSubsys(self.cfg, self.hostid, subsysid)
+                               for subsysid in self.cfg['subsysids']]
+        return self._subsyses
 
     def create(self, agent):
         for subsys in self.subsyses:
@@ -113,7 +109,6 @@ class NvmetTarget:
             for port in self.ports:
                 port.del_subsys(agent, subsys.nqn)
             subsys.destroy(agent)
-        agent.execute('nvmet_clear')
 
 
 class NvmetTopology:
@@ -128,17 +123,15 @@ class NvmetTopology:
 
     @property
     def ports(self):
-        if self._ports:
-            return self._ports
-        self._ports = [NvmetPort(port) for port in self.cfg['ports']]
+        if not self._ports:
+            self._ports = [NvmetPort(port) for port in self.cfg['ports']]
         return self._ports
 
     @property
     def targets(self):
-        if self._targets:
-            return self._targets
-        self._targets = [NvmetTarget(tgt, self.hostid, self.ports)
-                         for tgt in self.cfg['targets']]
+        if not self._targets:
+            self._targets = [NvmetTarget(tgt, self.hostid, self.ports)
+                             for tgt in self.cfg['targets']]
         return self._targets
 
     def create(self, agent):
@@ -168,8 +161,7 @@ def create(agents, topology):
 
 
 def destroy(agents, topology):
-    agents.reverse()
-    for agent in agents:
+    for agent in agents[::-1]:
         topology.destroy(agent)
 
 

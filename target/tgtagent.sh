@@ -51,18 +51,22 @@ nvmet_port_create() {
 		runcmd nvmetcli /ports/$portid set addr adrfam=ipv4
 		;;
 	client)
-		hostaddr=$(ip addr show to $traddr/24 | sed -n '2p' | awk '{ print $2 }')
-		hostaddr=${hostaddr%%/*}
+		hostaddr=$(ip -br addr show to $traddr/24 | awk '{ print $3 }' | sed -e 's/\/.*//g')
 
 		entry="--transport=$transport "
 		entry+="--traddr=$traddr "
 		entry+="--trsvcid=$trsvcid "
 		entry+="--host-traddr=$hostaddr "
 		entry+="--nr-io-queues=4 --ctrl-loss-tmo=3 --reconnect-delay=1 --keep-alive-tmo=1 "
-		entry+="--persistent"
+		entry+="--persistent"	# necessary to make ctrl-loss-tmo persistent.
 
 		sed -i "/$entry/d" /etc/nvme/discovery.conf
 		echo $entry | tee -a /etc/nvme/discovery.conf
+
+		# when client side run to here, the target side has already
+		# created port and added all subsystems. It is possible to
+		# connect all here, instead of each nqn one by one.
+		runcmd nvme connect-all
 		;;
 	esac
 }
@@ -75,11 +79,12 @@ nvmet_port_destroy() {
 
 	case $mode in
 	active)
-		# active side destroy all with 'nvmetcli clear'
+		if [ -e /sys/kernel/config/nvmet/ports/$portid ]; then
+			runcmd nvmetcli /ports delete $portid
+		fi
 		;;
 	client)
-		hostaddr=$(ip addr show to $traddr/24 | sed -n '2p' | awk '{ print $2 }')
-		hostaddr=${hostaddr%%/*}
+		hostaddr=$(ip -br addr show to $traddr/24 | awk '{ print $3 }' | sed -e 's/\/.*//g')
 
 		entry="--transport=$transport "
 		entry+="--traddr=$traddr "
@@ -93,35 +98,31 @@ nvmet_port_destroy() {
 
 nvmet_port_add_subsys() {
 	local portid=$1
-	local traddr=$2
-	local trsvcid=$3
-	local transport=$4
-	local nqn=$5
+	local nqn=$2
 
 	case $mode in
 	active)
 		runcmd nvmetcli /ports/$portid/subsystems create $nqn
 		;;
 	client)
-		hostaddr=$(ip addr show to $traddr/24 | sed -n '2p' | awk '{ print $2 }')
-		hostaddr=${hostaddr%%/*}
-		runcmd nvme connect --nqn $nqn --traddr $traddr --trsvcid $trsvcid --transport $transport \
-			--nr-io-queues=4 --ctrl-loss-tmo=3 --reconnect-delay=1 --keep-alive-tmo=1
 		;;
 	esac
 }
 
 nvmet_port_del_subsys() {
 	local portid=$1
-	local traddr=$2
-	local trsvcid=$3
-	local transport=$4
-	local nqn=$5
+	local nqn=$2
 
 	case $mode in
 	active)
+		if [ -e /sys/kernel/config/nvmet/ports/$portid/subsystems/$nqn ]; then
+			runcmd nvmetcli /ports/$portid/subsystems delete $nqn
+		fi
 		;;
 	client)
+		# each nqn is disconnected one by one. disconnect-all
+		# is not allowed since it may disconnect nqn that are
+		# not created by this script.
 		runcmd nvme disconnect --nqn $nqn
 		;;
 	esac
@@ -136,7 +137,21 @@ nvmet_subsys_create() {
 		runcmd nvmetcli /subsystems create $nqn
 		runcmd nvmetcli /subsystems/$nqn set attr allow_any_host=1
 		if [ $offload -ne 0 ]; then
-		    runcmd nvmetcli /subsystems/$nqn set attr offload=1
+			runcmd nvmetcli /subsystems/$nqn set attr offload=1
+		fi
+		;;
+	client)
+		;;
+	esac
+}
+
+nvmet_subsys_destroy() {
+	local nqn=$1
+
+	case $mode in
+	active)
+		if [ -e /sys/kernel/config/nvmet/subsystems/$nqn ]; then
+			runcmd nvmetcli /subsystems delete $nqn
 		fi
 		;;
 	client)

@@ -242,28 +242,45 @@ class LustreTgt:
 class LustreNode:
     def __init__(self, cfg):
         self.cfg = cfg
+        self._diskgroups = None
+        self._devices = None
         self._targets = None
 
     @property
+    def lfs_osdtype(self):
+        return self.cfg['lustre']['osdtype']
+
+    @property
+    def lfs_fsname(self):
+        return self.cfg['lustre']['fsname']
+
+    @property
+    def lfs_mgsnids(self):
+        return self.cfg['lustre']['mgsnids']
+
+    @property
+    def diskgroups(self):
+        if not self._diskgroups:
+            self._diskgroups = {}
+            for dgc in self.cfg['diskgroups']:
+                self._diskgroups[dgc['name']] = DiskGroup(dgc)
+        return self._diskgroups
+
+    @property
+    def devices(self):
+        if not self._devices:
+            self._devices = {}
+            for devc in self.cfg['devices']:
+                cls = find_device_class(self.lfs_osdtype, devc['type'])
+                self._devices[devc['name']] = cls(devc, self.diskgroups)
+        return self._devices
+
+    @property
     def targets(self):
-        if self._targets:
-            return self._targets
-
-        lfscfg = self.cfg['lustre']
-
-        diskgroups = {}
-        for dgc in self.cfg['diskgroups']:
-            diskgroups[dgc['name']] = DiskGroup(dgc)
-
-        devices = {}
-        for devc in self.cfg['devices']:
-            devcls = find_device_class(lfscfg['osdtype'], devc['type'])
-            devices[devc['name']] = devcls(devc, diskgroups)
-
-        self._targets = []
-        for tgtc in self.cfg['targets']:
-            tgt = LustreTgt(tgtc, lfscfg['fsname'], lfscfg['mgsnids'], lfscfg['osdtype'], devices)
-            self._targets.append(tgt)
+        if not self._targets:
+            self._targets = [LustreTgt(tgtc, self.lfs_fsname, self.lfs_mgsnids,
+                                       self.lfs_osdtype, self.devices)
+                             for tgtc in self.cfg['targets']]
         return self._targets
 
     def create(self, agent):
