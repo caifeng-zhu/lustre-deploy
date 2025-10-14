@@ -428,8 +428,9 @@ mdraid_create() {
 			chunksize=$((STRIPESIZE / (ndevice - 2)))
 			options="--chunk=${chunksize}K"
 			;;
-		10)
-			ncopy=$((ndevice / 2))
+		10_*)
+			ncopy=${level##10_}
+			level=10
 			options="--layout=n$ncopy"
 			;;
 		esac

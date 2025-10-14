@@ -1,0 +1,28 @@
+agents:
+  - mgmtip: 10.20.6.59
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+  - mgmtip: 10.20.6.99
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: backup
+  - mgmtip: 10.20.6.100
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: backup
+
+diskgroups:
+  - name: scsi-disks
+    diskdir: /dev/disk/iscsi
+    hostids: [ n059, n099, n100 ]
+    diskids: [ 0:2:4:0, 0:2:5:0 ]
+
+devices:
+  - name: scsivol
+    type: raid10_3
+    diskgroup: scsi-disks
+
+vgs:
+  - name: scsivg
+    device: scsivol
