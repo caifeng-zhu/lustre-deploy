@@ -11,24 +11,28 @@ hosts:
     authuser: hacluster
     authpasswd: hapasswd
 
-    ipmiaddr: 172.16.1.59
-    ipmiuser: zhucaifeng
-    ipmipasswd: LbV3sxXPp0zcf
-
   - name: n099
     authaddr: 10.20.6.99
     authuser: hacluster
     authpasswd: hapasswd
-
-    ipmiaddr: 172.16.1.99
-    ipmiuser: zhucaifeng
-    ipmipasswd: LbV3sxXPp0zcf
 
   - name: n100
     authaddr: 10.20.6.100
     authuser: hacluster
     authpasswd: hapasswd
 
+stoniths:
+  - name: n059
+    ipmiaddr: 172.16.1.59
+    ipmiuser: zhucaifeng
+    ipmipasswd: LbV3sxXPp0zcf
+
+  - name: n099
+    ipmiaddr: 172.16.1.99
+    ipmiuser: zhucaifeng
+    ipmipasswd: LbV3sxXPp0zcf
+
+  - name: n100
     ipmiaddr: 172.16.1.100
     ipmiuser: zhucaifeng
     ipmipasswd: LbV3sxXPp0zcf

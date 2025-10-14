@@ -383,6 +383,9 @@ mdraid_start() {
 	local tgtname=$1
 	local volname=$2
 
+	if [ -e /dev/md/$volname ]; then
+		return 0	# volume is already existent
+	fi
 	if [ -e /etc/mdadm/${tgtname}.conf ]; then
 		runcmd mdadm --assemble /dev/md/$volname --conf /etc/mdadm/${tgtname}.conf --force
 		wait_device /dev/md/$volname
@@ -413,19 +416,26 @@ mdraid_create() {
 	case $mode in
 	active)
 		set -x
-		local opt_chunk=''
+		local options=''
 		local chunksize=0
 		local ndevice=${#devices[@]}
 		case $level in
-		5) 	chunksize=$((STRIPESIZE / (ndevice -1)));;
-		6) 	chunksize=$((STRIPESIZE / (ndevice - 2)));;
+		5)
+			chunksize=$((STRIPESIZE / (ndevice -1)))
+			options="--chunk=${chunksize}K"
+			;;
+		6)
+			chunksize=$((STRIPESIZE / (ndevice - 2)))
+			options="--chunk=${chunksize}K"
+			;;
+		10)
+			ncopy=$((ndevice / 2))
+			options="--layout=n$ncopy"
+			;;
 		esac
-		if [ $chunksize -ne 0 ]; then
-			opt_chunk="--chunk=${chunksize}K"
-		fi
 
 		runcmd mdadm --create $volname --run --quiet --force --homehost=any \
-			--data-offset=1M --level=$level $opt_chunk \
+			--data-offset=1M --level=$level $options \
 			-n ${#devices[@]} ${devices[@]}
 		wait_device /dev/md/$volname
 		set +x
@@ -826,6 +836,7 @@ lvm_do_vg_destroy() {
 	runcmd vgchange --lockstart $vgname
 	runcmd vgremove --force $vgname
 
+	runcmd wipefs -a /dev/md/$volname
 	mdraid_stop $volname
 }
 

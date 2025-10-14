@@ -12,7 +12,6 @@ from tgtconfig import ConfigAgent
 class PcsHost:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.isprimary = False
 
     @property
     def name(self):
@@ -31,6 +30,24 @@ class PcsHost:
         return self.cfg['authpasswd']
 
     @property
+    def name_addr(self):
+        return f"{self.name} addr={self.authaddr}"
+
+    def create(self, agent):
+        agent.execute('pcs_host_auth', self.name, self.authaddr,
+                      self.authuser, self.authpasswd)
+
+
+class PcsStonith:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.isprimary = False
+
+    @property
+    def name(self):
+        return self.cfg['name']
+
+    @property
     def ipmiaddr(self):
         return self.cfg['ipmiaddr']
 
@@ -42,15 +59,10 @@ class PcsHost:
     def ipmipasswd(self):
         return self.cfg['ipmipasswd']
 
-    @property
-    def name_addr(self):
-        return f"{self.name} addr={self.authaddr}"
+    def set_primary(self):
+        self.isprimary = True
 
-    def create_auth(self, agent):
-        agent.execute('pcs_host_auth', self.name, self.authaddr,
-                      self.authuser, self.authpasswd)
-
-    def create_stonith(self, agent):
+    def create(self, agent):
         if self.isprimary:
             # it is the primary node and the backup one
             # is told to delay when carrying on stonith.
@@ -67,8 +79,6 @@ class PcsHost:
                       f'pcmk_host_list={self.name}',
                       delay)
 
-    def set_primary(self):
-        self.isprimary = True
 
 class PcsResource:
     def __init__(self, cfg):
@@ -129,6 +139,7 @@ class PcsCluster:
     def __init__(self, cfg):
         self.cfg = cfg
         self._hosts = None
+        self._stoniths = None
         self._resources = None
         self._groups = None
 
@@ -139,41 +150,49 @@ class PcsCluster:
     @property
     def stonith_enabled(self):
         if 'stonith_enabled' not in self.cfg:
-            return True # default is enabled
+            return True     # default is enabled
         return self.cfg['stonith_enabled']
 
     @property
+    def stoniths(self):
+        if self._stoniths is None:
+            self._stoniths = [PcsStonith(stonith) for stonith in self.cfg['stoniths']] \
+                    if 'stoniths' in self.cfg else []
+            if len(self._stoniths) == 2:
+                # for a two node topology, the first node is selected as the
+                # primary one. the primary node can delay the other node when
+                # doing stonith.
+                self._stoniths[0].set_primary()
+        return self._stoniths
+
+    @property
     def hosts(self):
-        if self._hosts:
-            return self._hosts
-        self._hosts = [PcsHost(host) for host in self.cfg['hosts']]
-        if len(self._hosts) == 2:
-            # for a two node topology, the first node is selected as the
-            # primary one. the primary node can delay the other node when
-            # doing stonith.
-            self._hosts[0].set_primary()
+        if self._hosts is None:
+            self._hosts = [PcsHost(host) for host in self.cfg['hosts']] \
+                    if 'hosts' in self.cfg else []
         return self._hosts
 
     @property
     def resources(self):
-        if not self._resources:
+        if self._resources is None:
             self._resources = [PcsResource(res) for res in self.cfg['resources']]
         return self._resources
 
     @property
     def groups(self):
-        if not self._groups:
+        if self._groups is None:
             self._groups = [PcsGroup(grp) for grp in self.cfg['groups']]
         return self._groups
 
     def create(self, agent):
         for host in self.hosts:
-            host.create_auth(agent)
+            host.create(agent)
 
-        name_addrs = ' '.join(h.name_addr for h in self.hosts).strip()
-        agent.execute('pcs_cluster_setup', self.name, name_addrs)
-        if len(self.hosts) == 2:
-            agent.execute('pcs_property_set', 'no-quorum-policy=ignore')
+        if self.hosts:
+            name_addrs = ' '.join(h.name_addr for h in self.hosts).strip()
+            agent.execute('pcs_cluster_setup', self.name, name_addrs)
+            if len(self.hosts) == 2:
+                agent.execute('pcs_property_set', 'no-quorum-policy=ignore')
 
         for res in self.resources:
             res.create(agent)
@@ -184,8 +203,8 @@ class PcsCluster:
         if not self.stonith_enabled:
             agent.execute('pcs_property_set', 'stonith-enabled=false')
             return
-        for host in self.hosts:
-            host.create_stonith(agent)
+        for stonith in self.stoniths:
+            stonith.create(agent)
 
     def destroy(self, agent):
         agent.execute('pcs_cluster_destroy')

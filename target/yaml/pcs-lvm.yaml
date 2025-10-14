@@ -5,22 +5,25 @@ agents:
     mode: active
 
 name: copyset1
-stonith_enabled: false
 hosts:
   - name: n010
     authaddr: 10.5.41.10
     authuser: hacluster
     authpasswd: hapasswd
 
-    ipmiaddr: 192.168.50.41
-    ipmiuser: yulingz
-    ipmipasswd: W68cfurjYV0314
-
   - name: n034
     authaddr: 10.5.41.34
     authuser: hacluster
     authpasswd: hapasswd
 
+stonith_enabled: false
+stoniths:
+  - name: n010
+    ipmiaddr: 192.168.50.41
+    ipmiuser: yulingz
+    ipmipasswd: W68cfurjYV0314
+
+  - name: n034
     ipmiaddr: 192.168.50.76
     ipmiuser: yulingz
     ipmipasswd: W68cfurjYV0314
