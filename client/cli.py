@@ -111,17 +111,13 @@ class ClientPkgs(ClientItem):
 
 
 class ClientSubsys(ClientItem):
-    def __init__(self, cfg, parse_items, dumpcmd=''):
+    def __init__(self, cfg):
         super().__init__(cfg)
-        self.parse_items = parse_items
         self._items = None
-        self.dumpcmd = dumpcmd
 
     @property
     def items(self):
-        if self._items is None:
-            self._items = self.parse_items(self.cfg)
-        return self._items
+        pass
 
     def install(self, dispacher):
         for item in self.items:
@@ -144,8 +140,6 @@ class ClientSubsys(ClientItem):
     def dump(self, dispacher):
         for item in self.items:
             item.dump(dispacher)
-        if self.dumpcmd:
-            dispacher.execute(self.dumpcmd)
 
 
 class LfsNetWorks(ClientItem):
@@ -224,6 +218,35 @@ class LfsMount(ClientItem):
         #dispacher.execute('lfs_dump_mount', self.srcpath, self.dstpath, self.options)
         pass
 
+class LfsMounts(ClientSubsys):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+
+    @property
+    def items(self):
+        if self._items is None:
+            self._items = [LfsMount(mnt) for mnt in self.cfg]
+        return self._items
+
+    def dump(self, dispacher):
+        dispacher.execute('lfs_dump_mount')
+
+
+class LfsConfig(ClientSubsys):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+
+    @property
+    def items(self):
+        if self._items is None:
+            self._items = []
+            self._items.append(ClientPkgs(self.cfg['pkgs']))
+            self._items.append(LfsNetWorks(self.cfg['networks']))
+            if 'routes' in cfg:
+                self._items.append(LfsRoutes(self.cfg['routes']))
+            self._items.append(LfsMounts(self.cfg['mounts']))
+        return self._items
+
 
 class LvmNvmets(ClientItem):
     def __init__(self, cfg):
@@ -294,49 +317,54 @@ class LvmVg(ClientItem):
         dispacher.execute('lvm_stop_vg', self.vg)
 
 
-def parse_items_lfs_mounts(cfg):
-    return [LfsMount(mnt) for mnt in cfg]
+class LvmVgs(ClientSubsys):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+
+    @property
+    def items(self):
+        if self._items is None:
+            self._items = [LvmVg(vg) for vg in self.cfg]
+        return self._items
+
+    def dump(self, dispacher):
+        dispacher.execute('lvm_dump_vgs')
 
 
-def parse_items_lfs(cfg):
-    items = []
-    items.append(ClientPkgs(cfg['pkgs']))
-    items.append(LfsNetWorks(cfg['networks']))
-    if 'routes' in cfg:
-        items.append(LfsRoutes(cfg['routes']))
-    items.append(ClientSubsys(cfg['mounts'], \
-            parse_items_lfs_mounts, 'lfs_dump_mounts'))
-    return items
+class LvmConfig(ClientSubsys):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+
+    @property
+    def items(self):
+        if self._items is None:
+            self._items = [ClientPkgs(cfg['pkgs'])]
+            if 'nvmets' in cfg:
+                self._items.append(LvmNvmets(cfg['nvmets']))
+            if 'iscsits' in cfg:
+                self._items.append(LvmIscsits(cfg['iscsits']))
+            self._items.append(LvmVgs(cfg['vgs']))
+        return self._items
 
 
-def parse_items_lvm_vgs(cfg):
-    return [LvmVg(vg) for vg in cfg]
+class ClientConfig(ClientSubsys):
+    def __init__(self, cfg):
+        super().__init__(cfg)
 
-
-def parse_items_lvm(cfg):
-    items = []
-    items.append(ClientPkgs(cfg['pkgs']))
-    if 'nvmets' in cfg:
-        items.append(LvmNvmets(cfg['nvmets']))
-    if 'iscsits' in cfg:
-        items.append(LvmIscsits(cfg['iscsits']))
-    items.append(ClientSubsys(cfg['vgs'],   \
-                              parse_items_lvm_vgs, 'lvm_dump_vgs'))
-    return items
-
-
-def parse_items_host(cfg):
-    items = []
-    if 'lfs' in cfg:
-        items.append(ClientSubsys(cfg['lfs'], parse_items_lfs))
-    if 'lvm' in cfg:
-        items.append(ClientSubsys(cfg['lvm'], parse_items_lvm))
-    return items
+    @property
+    def items(self):
+        if self._items is None:
+            self._items = []
+            if 'lfs' in cfg:
+                self._items.append(LfsConfig(self.cfg['lfs']))
+            if 'lvm' in cfg:
+                self._items.append(LvmConfig(self.cfg['lvm']))
+    return self._items
 
 
 def build(cfg, args):
     dispacher = dispacher_create(cfg['client'], args.nodes)
-    cli = ClientSubsys(cfg, parse_items_host)
+    cli = ClientConfig(cfg)
     return dispacher, cli
 
 
