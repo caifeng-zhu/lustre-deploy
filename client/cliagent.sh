@@ -253,6 +253,46 @@ lvm_dump_nvmets() {
 	fi
 }
 
+lvm_add_iscsits() {
+        local iqn=$1
+        local addr=$2
+        local port=$3
+	runcmd iscsiadm -m discovery -t st -p $addr:$port
+}
+
+lvm_del_iscsits() {
+        local iqn=$1
+        local addr=$2
+        local port=$3
+
+	if [ -d /etc/iscsi/nodes/$iqn ] && [ -d /etc/iscsi/send_targets/"$addr,$port" ]; then
+		runcmd iscsiadm -m discoverydb -t st -p $addr:$port -o delete
+	fi
+}
+
+lvm_start_iscsits() {
+        local iqn=$1
+        local addr=$2
+        local port=$3
+	if ! $(iscsiadm -m session 2>/dev/null | grep -q "$addr:$port.*$iqn"); then
+		runcmd iscsiadm -m node -l -T $iqn -p $addr:$port
+	fi
+}
+
+lvm_stop_iscsits() {
+        local iqn=$1
+        local addr=$2
+        local port=$3
+	if $(iscsiadm -m session 2>/dev/null | grep -q "$addr:$port.*$iqn"); then
+		runcmd iscsiadm -m node -u -T $iqn -p $addr:$port
+	fi
+}
+
+lvm_dump_iscsits() {
+	runcmd iscsiadm -m session
+	runcmd iscsiadm -m node
+}
+
 lvm_add_vg() {
 	local vg=$1
 	local hn id idbase
@@ -360,6 +400,11 @@ case $oper in
 'lvm_start_nvmets')		lvm_start_nvmets $*		;;
 'lvm_stop_nvmets')		lvm_stop_nvmets $*		;;
 'lvm_dump_nvmets')		lvm_dump_nvmets $*		;;
+'lvm_add_iscsits')		lvm_add_iscsits $*		;;
+'lvm_del_iscsits')		lvm_del_iscsits $*		;;
+'lvm_start_iscsits')		lvm_start_iscsits $*		;;
+'lvm_stop_iscsits')		lvm_stop_iscsits $*		;;
+'lvm_dump_iscsits')		lvm_dump_iscsits $*		;;
 'lvm_add_vg')			lvm_add_vg $*			;;
 'lvm_del_vg')			lvm_del_vg $*			;;
 'lvm_start_vg')			lvm_start_vg $*			;;

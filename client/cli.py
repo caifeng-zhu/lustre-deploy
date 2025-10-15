@@ -250,7 +250,27 @@ class LvmNvmets(ClientItem):
 
 
 class LvmIscsits(ClientItem):
-    pass
+    def __init__(self, cfg):
+        super().__init__(cfg)
+
+    @property
+    def iscsits(self):
+        return [f"{iscsit['iqn']} {iscsit['addr']} {iscsit['port']}" for iscsit in self.cfg]
+
+    def install(self, dispacher):
+        dispacher.execute("lvm_add_iscsits", *self.iscsits)
+
+    def uninstall(self, dispacher):
+        dispacher.execute("lvm_del_iscsits", *self.iscsits)
+
+    def start(self, dispacher):
+        dispacher.execute("lvm_start_iscsits", *self.iscsits)
+
+    def stop(self, dispacher):
+        dispacher.execute("lvm_stop_iscsits", *self.iscsits)
+
+    def dump(self, dispacher):
+        dispacher.execute("lvm_dump_iscsits", *self.iscsits)
 
 
 class LvmVg(ClientItem):
@@ -296,7 +316,10 @@ def parse_items_lvm_vgs(cfg):
 def parse_items_lvm(cfg):
     items = []
     items.append(ClientPkgs(cfg['pkgs']))
-    items.append(LvmNvmets(cfg['nvmets']))
+    if 'nvmets' in cfg:
+        items.append(LvmNvmets(cfg['nvmets']))
+    if 'iscsits' in cfg:
+        items.append(LvmIscsits(cfg['iscsits']))
     items.append(ClientSubsys(cfg['vgs'],   \
                               parse_items_lvm_vgs, 'lvm_dump_vgs'))
     return items
