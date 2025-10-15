@@ -254,38 +254,61 @@ lvm_dump_nvmets() {
 }
 
 lvm_add_iscsits() {
-        local iqn=$1
-        local addr=$2
-        local port=$3
-	runcmd iscsiadm -m discovery -t st -p $addr:$port
+	local iqn addr port
+
+	while [ ${#*} -gt 0 ]; do
+		iqn=$1
+		addr=$2
+		port=$3
+		shift 3
+
+		runcmd iscsiadm -m discovery -t st -p $addr:$port
+	done
 }
 
 lvm_del_iscsits() {
-        local iqn=$1
-        local addr=$2
-        local port=$3
+	local iqn addr port
 
-	if [ -d /etc/iscsi/nodes/$iqn ] && [ -d /etc/iscsi/send_targets/"$addr,$port" ]; then
-		runcmd iscsiadm -m discoverydb -t st -p $addr:$port -o delete
-	fi
+	while [ ${#*} -gt 0 ]; do
+		iqn=$1
+		addr=$2
+		port=$3
+		shift 3
+
+		if [ -d /etc/iscsi/nodes/$iqn ] && [ -d /etc/iscsi/send_targets/"$addr,$port" ]; then
+			runcmd iscsiadm -m discoverydb -t st -p $addr:$port -o delete
+		fi
+	done
 }
 
 lvm_start_iscsits() {
-        local iqn=$1
-        local addr=$2
-        local port=$3
-	if ! $(iscsiadm -m session 2>/dev/null | grep -q "$addr:$port.*$iqn"); then
-		runcmd iscsiadm -m node -l -T $iqn -p $addr:$port
-	fi
+	local iqn addr port
+
+	while [ ${#*} -gt 0 ]; do
+		iqn=$1
+		addr=$2
+		port=$3
+		shift 3
+
+		if ! $(iscsiadm -m session 2>/dev/null | grep -q "$addr:$port.*$iqn"); then
+			runcmd iscsiadm -m node -l -T $iqn -p $addr:$port
+		fi
+	done
 }
 
 lvm_stop_iscsits() {
-        local iqn=$1
-        local addr=$2
-        local port=$3
-	if $(iscsiadm -m session 2>/dev/null | grep -q "$addr:$port.*$iqn"); then
-		runcmd iscsiadm -m node -u -T $iqn -p $addr:$port
-	fi
+	local iqn addr port
+
+	while [ ${#*} -gt 0 ]; do
+		iqn=$1
+		addr=$2
+		port=$3
+		shift 3
+
+		if $(iscsiadm -m session 2>/dev/null | grep -q "$addr:$port.*$iqn"); then
+			runcmd iscsiadm -m node -u -T $iqn -p $addr:$port
+		fi
+	done
 }
 
 lvm_dump_iscsits() {
