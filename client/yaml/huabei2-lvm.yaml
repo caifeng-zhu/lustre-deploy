@@ -1,0 +1,21 @@
+client:
+  workdir: /tmp/client-deploy
+  agent: cliagent.sh
+
+host: 4090
+
+# the order is important: for install, all files are installed in
+# the sequencial order as configured; for uninstall, all files
+# are uninstalled in reverse order.
+lvm:
+  pkgs:
+    - nvme-cli
+    - lvm/lvm-agent_1.0.deb
+
+  iscsits:
+    - iqn: iqn.2024-04.com.ebcloud.scsivol-tgt
+      addr: 10.1.64.208
+      port: 3260
+
+  vgs:
+    - scsivg
