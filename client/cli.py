@@ -242,7 +242,7 @@ class LfsConfig(ClientSubsys):
             self._items = []
             self._items.append(ClientPkgs(self.cfg['pkgs']))
             self._items.append(LfsNetWorks(self.cfg['networks']))
-            if 'routes' in cfg:
+            if 'routes' in self.cfg:
                 self._items.append(LfsRoutes(self.cfg['routes']))
             self._items.append(LfsMounts(self.cfg['mounts']))
         return self._items
@@ -338,12 +338,12 @@ class LvmConfig(ClientSubsys):
     @property
     def items(self):
         if self._items is None:
-            self._items = [ClientPkgs(cfg['pkgs'])]
-            if 'nvmets' in cfg:
-                self._items.append(LvmNvmets(cfg['nvmets']))
-            if 'iscsits' in cfg:
-                self._items.append(LvmIscsits(cfg['iscsits']))
-            self._items.append(LvmVgs(cfg['vgs']))
+            self._items = [ClientPkgs(self.cfg['pkgs'])]
+            if 'nvmets' in self.cfg:
+                self._items.append(LvmNvmets(self.cfg['nvmets']))
+            if 'iscsits' in self.cfg:
+                self._items.append(LvmIscsits(self.cfg['iscsits']))
+            self._items.append(LvmVgs(self.cfg['vgs']))
         return self._items
 
 
@@ -355,11 +355,11 @@ class ClientConfig(ClientSubsys):
     def items(self):
         if self._items is None:
             self._items = []
-            if 'lfs' in cfg:
+            if 'lfs' in self.cfg:
                 self._items.append(LfsConfig(self.cfg['lfs']))
-            if 'lvm' in cfg:
+            if 'lvm' in self.cfg:
                 self._items.append(LvmConfig(self.cfg['lvm']))
-    return self._items
+        return self._items
 
 
 def build(cfg, args):

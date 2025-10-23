@@ -322,14 +322,20 @@ lvm_add_vg() {
 
 	hn=$(hostname)
 	case $hn in
-	gpu-a800-*)
-		idbase=1000
-		;;
-        gpu-h800-*)
-		idbase=0
+	gpu-h800-*)
+                idbase=0
+                ;;
+        gpu-a800-*)
+                idbase=256
+                ;;
+        gpu-4090d-*)
+                idbase=512
                 ;;
         cpu-*)
-		idbase=0	# for test
+                idbase=768	# for test
+                ;;
+        gpu-4090-*)
+                idbase=1024
                 ;;
         *)
                 errexit "hostname invalid"
