@@ -25,19 +25,18 @@ diskgroups:
     hostids: [ n059, n099, n100 ]
     diskids: [ 0000:c1:00.0-n1 ]
 
-devices:
+volumes:
   - name: ost1-journal
-    type: raid1
+    raid: raid1
     diskgroup: ost1-disks
     partsizes: [ 16MiB, 1GiB ]
 
   - name: ost1-data
-    type: raid5
+    raid: raid5
     diskgroup: ost1-disks
     partsizes: [ 1GiB, 100% ]
 
 targets:
   - name: ost1
     nids: [ 10.20.6.99@tcp, 10.20.6.100@tcp ]
-    devs: [ ost1-data, ost1-journal ]
-
+    vols: [ ost1-data, ost1-journal ]

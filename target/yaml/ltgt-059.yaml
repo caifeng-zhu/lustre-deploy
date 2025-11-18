@@ -30,37 +30,37 @@ diskgroups:
     hostids: [ n059, n099, n100 ]
     diskids: [ 0000:02:00.0-n1 ]
 
-devices:
+volumes:
   - name: mgt-data
-    type: raid1
+    raid: raid1
     diskgroup: mgtmdt0-data-disks
     partsizes: [ 16MiB, 1GiB ]
 
   - name: mdt0-data
-    type: raid1
+    raid: raid1
     diskgroup: mgtmdt0-data-disks
     partsizes: [ 1GiB, 100% ]
 
   - name: ost0-journal
-    type: raid1
+    raid: raid1
     diskgroup: ost0-disks
     partsizes: [ 16MiB, 1GiB ]
 
   - name: ost0-data
-    type: raid5
+    raid: raid5
     diskgroup: ost0-disks
     partsizes: [ 1GiB, 100% ]
 
 targets:
   - name: mgt
     nids: [ 10.20.6.59@tcp, 10.20.6.99@tcp ]
-    devs: [ mgt-data ]
+    vols: [ mgt-data ]
 
   - name: mdt0
     nids: [ 10.20.6.59@tcp, 10.20.6.99@tcp ]
-    devs: [ mdt0-data ]
+    vols: [ mdt0-data ]
 
   - name: ost0
     nids: [ 10.20.6.59@tcp, 10.20.6.99@tcp ]
-    devs: [ ost0-data, ost0-journal ]
+    vols: [ ost0-data, ost0-journal ]
 

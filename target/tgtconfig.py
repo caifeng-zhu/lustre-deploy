@@ -62,3 +62,13 @@ class ConfigAgent:
         for agent in agents:
             agent.start()
         return agents
+
+
+class ConfigItem:
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def __getattr__(self, name):
+        if name in self.cfg:
+            return self.cfg[name]
+        return None
