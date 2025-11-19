@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 
-debug = False
+debug = True
 
 
 def run(cmd: str):

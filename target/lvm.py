@@ -16,7 +16,7 @@ class RaidVolume:
     def __init__(self, cfgdata, diskgroups):
         cfg = ConfigItem(cfgdata)
         self.name = cfg.name
-        self.type = cfg.type
+        self.raid = cfg.raid
         self.diskgroup = diskgroups[cfg.diskgroup]
 
     @property
@@ -24,10 +24,10 @@ class RaidVolume:
         return f'/dev/md/{self.name}'
 
     def create(self, agent):
-        agent.execute('mdraid_create', self.name, self.type, *self.diskgroup.diskpaths)
+        agent.execute('mdraid_create', self.name, self.raid, *self.diskgroup.diskpaths)
 
     def destroy(self, agent):
-        agent.execute('mdraid_destroy', self.name, self.type, *self.diskgroup.diskpaths)
+        agent.execute('mdraid_destroy', self.name, self.raid, *self.diskgroup.diskpaths)
 
 
 class LvmVg:
@@ -50,8 +50,8 @@ class LvmNode:
         cfg = ConfigItem(cfgdata)
         self.diskgroups = {dg['name']: DiskGroup(dg)
                            for dg in cfg.diskgroups}
-        self.volumes = {dev['name']: RaidVolume(dev, self.diskgroups)
-                        for dev in cfg.volumes}
+        self.volumes = {vc['name']: RaidVolume(vc, self.diskgroups)
+                        for vc in cfg.volumes}
         self.vgs = [LvmVg(vg, self.volumes) for vg in cfg.vgs]
 
     def create(self, agent):
