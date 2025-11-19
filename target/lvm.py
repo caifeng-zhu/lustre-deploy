@@ -1,102 +1,58 @@
 #!/usr/bin/env python
 
-import yaml
 import argparse
-from tgtconfig import ConfigAgent
+import yaml
+from tgtconfig import ConfigAgent, ConfigItem
 
 class DiskGroup:
-    def __init__(self, cfg):
-        self.cfg = cfg
-
-    @property
-    def disks(self):
-        diskdir = self.cfg['diskdir']
-        return [f'{diskdir}/{hostid}-{diskid}'
-                for diskid in self.cfg['diskids']
-                for hostid in self.cfg['hostids']]
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
+        self.diskpaths = [f'{cfg.diskdir}/{hostid}-{diskid}'
+                          for diskid in cfg.diskids
+                          for hostid in cfg.hostids]
 
 
-class RaidDevice:
-    def __init__(self, cfg, diskgroups):
-        self.cfg = cfg
-        self.diskgroups = diskgroups
-
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
-    def type(self):
-        return self.cfg['type']
-
-    @property
-    def diskgroup(self):
-        return self.diskgroups[self.cfg['diskgroup']]
+class RaidVolume:
+    def __init__(self, cfgdata, diskgroups):
+        cfg = ConfigItem(cfgdata)
+        self.name = cfg.name
+        self.type = cfg.type
+        self.diskgroup = diskgroups[cfg.diskgroup]
 
     @property
     def devpath(self):
         return f'/dev/md/{self.name}'
 
     def create(self, agent):
-        agent.execute('mdraid_create', self.name, self.type, *self.diskgroup.disks)
+        agent.execute('mdraid_create', self.name, self.type, *self.diskgroup.diskpaths)
 
     def destroy(self, agent):
-        agent.execute('mdraid_destroy', self.name, self.type, *self.diskgroup.disks)
+        agent.execute('mdraid_destroy', self.name, self.type, *self.diskgroup.diskpaths)
 
 
 class LvmVg:
-    def __init__(self, cfg, devices):
-        self.cfg = cfg
-        self.devices = devices
-
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
-    def device(self):
-        return self.devices[self.cfg['device']]
+    def __init__(self, cfgdata, volumes):
+        cfg = ConfigItem(cfgdata)
+        self.name = cfg.name
+        self.volume = volumes[cfg.volume]
 
     def create(self, agent):
-        self.device.create(agent)
-
-        cmd = 'lvm_vg_create'
-        agent.execute(cmd, self.name, self.device.name)
+        self.volume.create(agent)
+        agent.execute('lvm_vg_create', self.name, self.volume.name)
 
     def destroy(self, agent):
-        cmd = 'lvm_vg_destroy'
-        agent.execute(cmd, self.name, self.device.name)
+        agent.execute('lvm_vg_destroy', self.name, self.volume.name)
+        self.volume.destroy(agent)
 
-        self.device.destroy(agent)
 
-class LvmTopology:
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self._vgs = None
-        self._diskgroups = None
-        self._devices = None
-
-    @property
-    def diskgroups(self):
-        if not self._diskgroups:
-            self._diskgroups = {
-                    dg['name']: DiskGroup(dg)
-                    for dg in self.cfg['diskgroups']}
-        return self._diskgroups
-
-    @property
-    def devices(self):
-        if not self._devices:
-            self._devices = {
-                    dev['name']: RaidDevice(dev, self.diskgroups)
-                    for dev in self.cfg['devices']}
-        return self._devices
-
-    @property
-    def vgs(self):
-        if not self._vgs:
-            self._vgs = [LvmVg(vg, self.devices) for vg in self.cfg['vgs']]
-        return self._vgs
+class LvmNode:
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
+        self.diskgroups = {dg['name']: DiskGroup(dg)
+                           for dg in cfg.diskgroups}
+        self.volumes = {dev['name']: RaidVolume(dev, self.diskgroups)
+                        for dev in cfg.volumes}
+        self.vgs = [LvmVg(vg, self.volumes) for vg in cfg.vgs]
 
     def create(self, agent):
         for vg in self.vgs:
@@ -108,7 +64,7 @@ class LvmTopology:
 
 
 def build(cfg):
-    topology = LvmTopology(cfg)
+    topology = LvmNode(cfg)
     agents = ConfigAgent.from_config(cfg['agents'])
     return agents, topology
 
