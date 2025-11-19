@@ -1,33 +1,19 @@
 #!/usr/bin/env python
 
-import subprocess
-import sys
-import os
-import yaml
 import argparse
-from typing import List, Dict
-from tgtconfig import ConfigAgent
+import yaml
+from tgtconfig import ConfigAgent, ConfigItem
 
 
 class PcsHost:
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.setup(ConfigItem(cfg))
 
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
-    def authaddr(self):
-        return self.cfg['authaddr']
-
-    @property
-    def authuser(self):
-        return self.cfg['authuser']
-
-    @property
-    def authpasswd(self):
-        return self.cfg['authpasswd']
+    def setup(self, cfg):
+        self.name = cfg.name
+        self.authaddr = cfg.authaddr
+        self.authuser = cfg.authuser
+        self.authpasswd = cfg.authpasswd
 
     @property
     def name_addr(self):
@@ -40,24 +26,14 @@ class PcsHost:
 
 class PcsStonith:
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.setup(ConfigItem(cfg))
         self.isprimary = False
 
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
-    def ipmiaddr(self):
-        return self.cfg['ipmiaddr']
-
-    @property
-    def ipmiuser(self):
-        return self.cfg['ipmiuser']
-
-    @property
-    def ipmipasswd(self):
-        return self.cfg['ipmipasswd']
+    def setup(self, cfg):
+        self.name = cfg.name
+        self.ipmiaddr = cfg.ipmiaddr
+        self.ipmiuser = cfg.ipmiuser
+        self.ipmipasswd = cfg.ipmipasswd
 
     def set_primary(self):
         self.isprimary = True
@@ -82,19 +58,12 @@ class PcsStonith:
 
 class PcsResource:
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.setup(ConfigItem(cfg))
 
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
-    def ra(self):
-        return self.cfg['ra']
-
-    @property
-    def params(self):
-        return [f'{k}={v}' for k, v in self.cfg['params'].items()]
+    def setup(self, cfg):
+        self.name = cfg.name
+        self.ra = cfg.ra
+        self.params = [f'{k}={v}' for k, v in cfg.params.items()]
 
     def create(self, agent):
         agent.execute('pcs_resource_create', self.name, self.ra, *self.params)
@@ -102,27 +71,13 @@ class PcsResource:
 
 class PcsGroup:
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.setup(ConfigItem(cfg))
 
-    @property
-    def name(self):
-        return self.cfg['name']
-
-    @property
-    def locations(self):
-        if 'locations' not in self.cfg:
-            return None
-        return self.cfg['locations']
-
-    @property
-    def predecessor(self):
-        if 'predecessor' not in self.cfg:
-            return None
-        return self.cfg['predecessor']
-
-    @property
-    def resources(self):
-        return self.cfg['resources']
+    def setup(self, cfg):
+        self.name = cfg.name
+        self.locations = cfg.locations
+        self.predecessor = cfg.predecessor
+        self.resources = cfg.resources
 
     def create(self, agent):
         if self.locations:
@@ -137,52 +92,21 @@ class PcsGroup:
 
 class PcsCluster:
     def __init__(self, cfg):
-        self.cfg = cfg
-        self._hosts = None
-        self._stoniths = None
-        self._resources = None
-        self._groups = None
+        self.setup(ConfigItem(cfg))
 
-    @property
-    def name(self):
-        return self.cfg['name']
 
-    @property
-    def stonith_enabled(self):
-        if 'stonith_enabled' not in self.cfg:
-            return True     # default is enabled
-        return self.cfg['stonith_enabled']
-
-    @property
-    def stoniths(self):
-        if self._stoniths is None:
-            self._stoniths = [PcsStonith(stonith) for stonith in self.cfg['stoniths']] \
-                    if 'stoniths' in self.cfg else []
-            if len(self._stoniths) == 2:
-                # for a two node topology, the first node is selected as the
-                # primary one. the primary node can delay the other node when
-                # doing stonith.
-                self._stoniths[0].set_primary()
-        return self._stoniths
-
-    @property
-    def hosts(self):
-        if self._hosts is None:
-            self._hosts = [PcsHost(host) for host in self.cfg['hosts']] \
-                    if 'hosts' in self.cfg else []
-        return self._hosts
-
-    @property
-    def resources(self):
-        if self._resources is None:
-            self._resources = [PcsResource(res) for res in self.cfg['resources']]
-        return self._resources
-
-    @property
-    def groups(self):
-        if self._groups is None:
-            self._groups = [PcsGroup(grp) for grp in self.cfg['groups']]
-        return self._groups
+    def setup(self, cfg):
+        self.name = cfg.name
+        self.hosts = [PcsHost(host) for host in cfg.hosts] if cfg.hosts else []
+        self.stoniths = [PcsStonith(stonith) for stonith in cfg.stoniths] if cfg.stoniths else []
+        if len(self.stoniths) == 2:
+            # for a two node topology, the first node is selected as the
+            # primary one. the primary node can delay the other node when
+            # doing stonith.
+            self.stoniths[0].set_primary()
+        self.resources = [PcsResource(res) for res in cfg.resources]
+        self.groups = [PcsGroup(grp) for grp in cfg.groups]
+        self.enable_stonith = cfg.stonith_enabled if cfg.stonith_enabled else True
 
     def create(self, agent):
         for host in self.hosts:
@@ -200,7 +124,7 @@ class PcsCluster:
         for grp in self.groups:
             grp.create(agent)
 
-        if not self.stonith_enabled:
+        if not self.enable_stonith:
             agent.execute('pcs_property_set', 'stonith-enabled=false')
             return
         for stonith in self.stoniths:

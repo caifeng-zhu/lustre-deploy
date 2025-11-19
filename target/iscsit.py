@@ -1,23 +1,17 @@
 #!/usr/bin/env python
 
+import argparse
 import yaml
 import sys
-import argparse
-from tgtconfig import ConfigAgent
+from tgtconfig import ConfigAgent, ConfigItem
 
 
 class IscsitPortal:
-    def __init__(self, cfg, iqn):
-        self.cfg = cfg
+    def __init__(self, cfgdata, iqn):
+        cfg = ConfigItem(cfgdata)
         self.iqn = iqn
-
-    @property
-    def addr(self):
-        return self.cfg['addr']
-
-    @property
-    def port(self):
-        return self.cfg['port']
+        self.addr = cfg.addr
+        self.port = cfg.port
 
     def create(self, agent):
         agent.execute('iscsit_portal_create', self.iqn, self.addr, self.port)
@@ -45,22 +39,13 @@ class IscsitAcl:
 
 
 class IscsitLun:
-    def __init__(self, cfg, hostid, iqn):
-        self.cfg = cfg
+    def __init__(self, cfgdata, hostid, iqn):
+        cfg = ConfigItem(cfgdata)
         self.iqn = iqn
         self.hostid = hostid
-
-    @property
-    def lunid(self):
-        return self.cfg['lunid']
-
-    @property
-    def devid(self):
-        return self.cfg['devid']
-
-    @property
-    def devpath(self):
-        return self.cfg['devpath']
+        self.lunid = cfg.lunid
+        self.devid = cfg.devid
+        self.devpath = cfg.devpath
 
     def create(self, agent):
         if len(self.devid) > 16:
@@ -75,45 +60,21 @@ class IscsitLun:
 
 
 class IscsitTarget:
-    def __init__(self, cfg, hostid):
-        self.cfg = cfg
+    def __init__(self, cfgdata, hostid):
+        cfg = ConfigItem(cfgdata)
         self.hostid = hostid
-        self._portals = None
-        self._acls = None
-        self._luns = None
-
-    @property
-    def iqn(self):
-        name = self.cfg['name']
-        return f'iqn.2024-04.com.ebtech.{self.hostid}.{name}'
-
-    @property
-    def portals(self):
-        if not self._portals:
-            self._portals = [IscsitPortal(portal, self.iqn) for portal in self.cfg['portals']]
-        return self._portals
-
-    @property
-    def acls(self):
-        if not self._acls:
-            self._acls = [IscsitAcl(acl, self.iqn) for acl in self.cfg['acls']]
-        return self._acls
-
-    @property
-    def luns(self):
-        if not self._luns:
-            self._luns = [IscsitLun(lun, self.hostid, self.iqn) for lun in self.cfg['luns']]
-        return self._luns
+        self.iqn = f'iqn.2024-04.com.hanrun.{hostid}.{cfg.name}'
+        self.portals = [IscsitPortal(portal, self.iqn) for portal in cfg.portals]
+        self.acls = [IscsitAcl(acl, self.iqn) for acl in cfg.acls]
+        self.luns = [IscsitLun(lun, self.hostid, self.iqn) for lun in cfg.luns]
 
     def create(self, agent):
         agent.execute('iscsit_iqn_create', self.iqn)
 
         for portal in self.portals:
             portal.create(agent)
-
         for acl in self.acls:
             acl.create(agent)
-
         for lun in self.luns:
             lun.create(agent)
 
@@ -128,10 +89,8 @@ class IscsitTarget:
     def destroy(self, agent):
         for portal in self.portals:
             portal.destroy(agent)
-
         for acl in self.acls:
             acl.destroy(agent)
-
         for lun in self.luns:
             lun.destroy(agent)
 
@@ -140,15 +99,8 @@ class IscsitTarget:
 
 class IscsitTopology:
     def __init__(self, cfg):
-        self.cfg = cfg
-        self._targets = None
-
-    @property
-    def targets(self):
-        if not self._targets:
-            hostid = self.cfg['hostid']
-            self._targets = [IscsitTarget(tgt, hostid) for tgt in self.cfg['targets']]
-        return self._targets
+        cfg = ConfigItem(cfg)
+        self.targets = [IscsitTarget(tgt, cfg.hostid) for tgt in cfg.targets]
 
     def create(self, agent):
         for tgt in self.targets:

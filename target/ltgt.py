@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 
-import sys
-import os
-import yaml
 import argparse
-from typing import List, Dict
-
+import yaml
 from tgtconfig import ConfigAgent, ConfigItem
 
 
@@ -48,23 +44,16 @@ class Partition:
 
 
 class DiskGroup:
-    def __init__(self, cfg):
-        self.cfg = ConfigItem(cfg)
-        self._disks = None
-
-    @property
-    def disks(self):
-        if self._disks is None:
-            if self.cfg.disknames:
-                self._disks = [Disk(f'{self.cfg.diskdir}/{diskname}')
-                               for diskname in self.cfg.disknames]
-            elif self.cfg.diskids and self.cfg.hostids:
-                self._disks = [Disk(f'{self.cfg.diskdir}/{hostid}-{diskid}')
-                               for diskid in self.cfg.diskids
-                               for hostid in self.cfg.hostids]
-            else:
-                self._disks = []
-        return self._disks
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
+        diskpaths = []
+        if cfg.disknames:
+            diskpaths = [f'{cfg.diskdir}/{diskname}' for diskname in cfg.disknames]
+        if cfg.diskids and cfg.hostids:
+            diskpaths = [f'{cfg.diskdir}/{hostid}-{diskid}'
+                         for diskid in cfg.diskids
+                         for hostid in cfg.hostids]
+        self.disks = [Disk(path) for path in diskpaths]
 
     def diskpaths(self):
         return [disk.devpath for disk in self.disks]
@@ -72,17 +61,21 @@ class DiskGroup:
     def diskparts(self, prefix, partsizes, ndisk):
         if ndisk == 0:
             ndisk = len(self.disks)
+
         if ndisk == 1:
             return [Partition(prefix, partsizes, self.disks[0])]
-        else:
-            return [Partition(prefix + f'-{i}', partsizes, disk)
-                    for i, disk in enumerate(self.disks)]
+        return [Partition(prefix + f'-{i}', partsizes, disk)
+                for i, disk in enumerate(self.disks)]
 
 
 class Volume:
-    def __init__(self, cfg, diskgroups):
-        self.cfg = ConfigItem(cfg)
-        self.diskgroup = diskgroups[self.cfg.diskgroup] if cfg else None
+    def __init__(self, cfgdata, diskgroups):
+        cfg = ConfigItem(cfgdata)
+        self.name = cfg.name
+        self.raid = cfg.raid
+        self.partsizes = cfg.partsizes
+        self.ndisk = int(cfg.disknum) if cfg.disknum else 0
+        self.diskgroup = diskgroups[cfg.diskgroup] if diskgroups else None
 
     def create(self, agent):
         pass
@@ -116,44 +109,37 @@ class ZpoolVolume(Volume):
 
     @property
     def devpath(self):
-        return self.cfg.name
+        return self.name
 
     def create(self, agent):
         if self.created:
             return
-        agent.execute('zpool_create', self.cfg.name, self.cfg.raid,
+        agent.execute('zpool_create', self.name, self.raid,
                       *self.diskgroup.diskpaths())
         self.created = 1
 
     def destroy(self, agent):
-        agent.execute('zpool_destroy', self.cfg.name)
+        agent.execute('zpool_destroy', self.name)
 
 
 class RaidVolume(Volume):
     def __init__(self, cfg, diskgroups):
         super().__init__(cfg, diskgroups)
-        self._partitions = None
+        self.partitions = self.diskgroup.diskparts(self.name, self.partsizes, self.ndisk)
 
     @property
     def devpath(self):
-        return f'/dev/md/{self.cfg.name}'
-
-    @property
-    def partitions(self):
-        if self._partitions is None:
-            ndisk = int(self.cfg.disknum) if self.cfg.disknum else 0
-            self._partitions = self.diskgroup.diskparts(self.cfg.name, self.cfg.partsizes, ndisk)
-        return self._partitions
+        return f'/dev/md/{self.name}'
 
     def create(self, agent):
         for part in self.partitions:
             part.create(agent)
         partpaths = [part.devpath for part in self.partitions]
-        agent.execute('mdraid_create', self.cfg.name, self.cfg.raid, *partpaths)
+        agent.execute('mdraid_create', self.name, self.raid, *partpaths)
 
     def destroy(self, agent):
         partpaths = [part.devpath for part in self.partitions]
-        agent.execute('mdraid_destroy', self.cfg.name, self.cfg.raid, *partpaths)
+        agent.execute('mdraid_destroy', self.name, self.raid, *partpaths)
         for part in self.partitions:
             part.destroy(agent)
 
@@ -165,13 +151,7 @@ class RawVolume(Volume):
     """
     def __init__(self, cfg, diskgroups):
         super().__init__(cfg, diskgroups)
-        self._partitons = None
-
-    @property
-    def partitions(self):
-        if self._partitions is None:
-            self._partitions = self.diskgroup.diskparts(self.cfg.name, self.cfg.partsizes, 1)
-        return self._partitions
+        self.partitions = self.diskgroup.diskparts(self.name, self.partsizes, 1)
 
     @property
     def devpath(self):
@@ -181,35 +161,35 @@ class RawVolume(Volume):
         self.partitions[0].create(agent)
 
     def destroy(self, agent):
-        self.partition.destroy(agent)
+        self.partitions[0].destroy(agent)
 
 
 class LustreTgt:
-    def __init__(self, cfg, lfs_cfg, volumes):
-        self.cfg = ConfigItem(cfg)
+    def __init__(self, cfgdata, lfs_cfg, volumes):
+        cfg = ConfigItem(cfgdata)
+        self.name = cfg.name
+        self.svcnids = ':'.join(cfg.nids)
+        self.dvol = volumes[cfg.vols[0]]
+        self.jvol = volumes[cfg.vols[1]] if len(cfg.vols) > 1 else NullVolume()
         self.lfsname = lfs_cfg.fsname
         self.osdtype = lfs_cfg.osdtype
         self.mgsnids = ':'.join(lfs_cfg.mgsnids)
-        self.svcnids = ':'.join(self.cfg.nids)
-        self.ddev = volumes[self.cfg.vols[0]]
-        self.jdev = volumes[self.cfg.vols[1]] if len(self.cfg.vols) > 1 else NullVolume()
 
     def create(self, agent):
-        self.jdev.create(agent)
-        self.ddev.create(agent)
+        self.jvol.create(agent)
+        self.dvol.create(agent)
 
-        tgttype = self.cfg.name[0:3]
+        tgttype = self.name[0:3]
         cmd = f'{self.osdtype}_{tgttype}_create'
-        agent.execute(cmd, self.lfsname, self.cfg.name, self.svcnids, self.mgsnids,
-                      self.ddev.devpath, self.jdev.devpath)
+        agent.execute(cmd, self.lfsname, self.name, self.svcnids, self.mgsnids,
+                      self.dvol.devpath, self.jvol.devpath)
 
     def destroy(self, agent):
         cmd = f'{self.osdtype}_tgt_destroy'
-        agent.execute(cmd, self.lfsname, self.cfg.name, self.ddev.devpath)
-        #print('destroy volumes', self.jdev, self.ddev, flush=True)
+        agent.execute(cmd, self.lfsname, self.name, self.dvol.devpath)
 
-        self.jdev.destroy(agent)
-        self.ddev.destroy(agent)
+        self.jvol.destroy(agent)
+        self.dvol.destroy(agent)
 
 volume_classes = [
         {
@@ -224,44 +204,23 @@ volume_classes = [
             'raidz2':   ZpoolVolume,
         },
 ]
+def volume_class(osdtype, raid):
+    global volume_classes
+    if osdtype == 'ldiskfs':
+        return volume_classes[0][raid]
+    if osdtype == 'zfs':
+        return volume_classes[1][raid]
+    raise ValueError(f'unknown raidtype {raid} for osdtype {osdtype}')
+
 
 class LustreNode:
-    def __init__(self, cfg):
-        self.cfg = ConfigItem(cfg)
-        self.lfs_cfg = ConfigItem(cfg['lustre'])
-        self._diskgroups = {}
-        self._volumes = {}
-        self._targets = []
-
-    def find_volume_class(self, raid):
-        global volume_classes
-        if self.lfs_cfg.osdtype == 'ldiskfs':
-            return volume_classes[0][raid]
-        if self.lfs_cfg.osdtype == 'zfs':
-            return volume_classes[1][raid]
-        raise ValueError(f'unknown raidtype {raid} for osdtype {self.lfs_cfg.osdtype}')
-
-    @property
-    def diskgroups(self):
-        if len(self._diskgroups) == 0:
-            for dgc in self.cfg.diskgroups:
-                self._diskgroups[dgc['name']] = DiskGroup(dgc)
-        return self._diskgroups
-
-    @property
-    def volumes(self):
-        if len(self._volumes) == 0:
-            for vc in self.cfg.volumes:
-                cls = self.find_volume_class(vc['raid'])
-                self._volumes[vc['name']] = cls(vc, self.diskgroups)
-        return self._volumes
-
-    @property
-    def targets(self):
-        if len(self._targets) == 0:
-            for tc in self.cfg.targets:
-                self._targets.append(LustreTgt(tc, self.lfs_cfg, self.volumes))
-        return self._targets
+    def __init__(self, cfgdata):
+        cfg, lfs_cfg = ConfigItem(cfgdata), ConfigItem(cfgdata['lustre'])
+        self.diskgroups = {dgc['name']: DiskGroup(dgc)
+                           for dgc in cfg.diskgroups}
+        self.volumes = {vc['name']: volume_class(lfs_cfg.osdtype, vc['raid'])(vc)
+                        for vc in cfg.volumes}
+        self.targets = [LustreTgt(tc, lfs_cfg, self.volumes) for tc in cfg.targets]
 
     def create(self, agent):
         for tgt in self.targets:

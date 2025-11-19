@@ -1,28 +1,18 @@
 #!/usr/bin/env python
 
-import yaml
 import argparse
-from tgtconfig import ConfigAgent
+import yaml
+from tgtconfig import ConfigAgent, ConfigItem
 
 class NvmetPort:
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.setup(ConfigItem(cfg))
 
-    @property
-    def portid(self):
-        return self.cfg['portid']
-
-    @property
-    def traddr(self):
-        return self.cfg['traddr']
-
-    @property
-    def trsvcid(self):
-        return self.cfg['trsvcid']
-
-    @property
-    def transport(self):
-        return self.cfg['transport']
+    def setup(self, cfg):
+        self.portid = cfg.portid
+        self.traddr = cfg.traddr
+        self.trsvcid = cfg.trsvcid
+        self.transport = cfg.transport
 
     def create(self, agent):
         agent.execute('nvmet_port_create', self.portid, self.traddr,
@@ -58,22 +48,13 @@ class NvmetNamespace:
 
 
 class NvmetSubsys:
-    def __init__(self, cfg, hostid: str, subsysid: str):
-        self.cfg = cfg
+    def __init__(self, tgt_cfg, hostid: str, subsysid: str):
+        self.setup(tgt_cfg, hostid, subsysid)
+
+    def setup(self, tgt_cfg, hostid, subsysid):
         self.nqn = f"{hostid}-{subsysid}"
-        self._namespaces = None
-
-    @property
-    def offload(self):
-        return self.cfg['offload']
-
-    @property
-    def namespaces(self):
-        if self._namespaces:
-            return self._namespaces
-        self._namespaces = [NvmetNamespace(self.nqn, nsid)
-                            for nsid in self.cfg['nsids']]
-        return self._namespaces
+        self.offload = tgt_cfg.offload
+        self.namespaces = [NvmetNamespace(self.nqn, nsid) for nsid in tgt_cfg.nsids]
 
     def create(self, agent):
         agent.execute('nvmet_subsys_create', self.nqn, self.offload)
@@ -86,17 +67,13 @@ class NvmetSubsys:
 
 class NvmetTarget:
     def __init__(self, cfg, hostid, ports):
-        self.cfg = cfg
+        self.setup(ConfigItem(cfg), hostid, ports)
+
+    def setup(self, cfg, hostid, ports):
         self.hostid = hostid
         self.ports = ports
-        self._subsyses = None
-
-    @property
-    def subsyses(self):
-        if not self._subsyses:
-            self._subsyses = [NvmetSubsys(self.cfg, self.hostid, subsysid)
-                               for subsysid in self.cfg['subsysids']]
-        return self._subsyses
+        self.subsyses = [NvmetSubsys(cfg, self.hostid, subsysid)
+                         for subsysid in cfg.subsysids]
 
     def create(self, agent):
         for subsys in self.subsyses:
@@ -111,28 +88,15 @@ class NvmetTarget:
             subsys.destroy(agent)
 
 
-class NvmetTopology:
+class NvmetNode:
     def __init__(self, cfg):
-        self.cfg = cfg
-        self._targets = None
-        self._ports = None
+        self.setup(ConfigItem(cfg))
 
-    @property
-    def hostid(self):
-        return self.cfg['hostid']
-
-    @property
-    def ports(self):
-        if not self._ports:
-            self._ports = [NvmetPort(port) for port in self.cfg['ports']]
-        return self._ports
-
-    @property
-    def targets(self):
-        if not self._targets:
-            self._targets = [NvmetTarget(tgt, self.hostid, self.ports)
-                             for tgt in self.cfg['targets']]
-        return self._targets
+    def setup(self, cfg):
+        self.hostid = cfg.hostid
+        self.ports = [NvmetPort(port) for port in cfg.ports]
+        self.targets = [NvmetTarget(tgt, self.hostid, self.ports)
+                        for tgt in cfg.targets]
 
     def create(self, agent):
         for port in self.ports:
@@ -141,15 +105,14 @@ class NvmetTopology:
             tgt.create(agent)
 
     def destroy(self, agent):
-        self.targets.reverse()
-        for tgt in self.targets:
+        for tgt in self.targets[::-1]:
             tgt.destroy(agent)
         for port in self.ports:
             port.destroy(agent)
 
 
 def build(config):
-    topology = NvmetTopology(config)
+    topology = NvmetNode(config)
     agents = ConfigAgent.from_config(config['agents'])
     return agents, topology
 
