@@ -1,0 +1,36 @@
+agents:
+  - mgmtip: 10.5.41.5
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: backup
+  - mgmtip: 10.5.41.7
+    script: ./tgtagent.sh
+    workdir: /tmp/target
+    mode: active
+
+diskgroups:
+  - name: nvme-disks
+    diskdir: /dev/disk/nvme
+    hostids: [ n005, n007 ]
+    diskids: [ 0000:c2:00.0-n1 ]
+
+  - name: scsi-disks
+    diskdir: /dev/disk/iscsi
+    hostids: [ n005, n007 ]
+    diskids: [ 0:2:6:0 ]
+
+volumes:
+  - name: nvmevol
+    raid: raid10
+    diskgroup: nvme-disks
+
+  - name: scsivol
+    raid: raid10
+    diskgroup: scsi-disks
+
+vgs:
+  - name: nvmevg
+    volume: nvmevol
+
+  - name: hascsivg
+    volume: scsivol
