@@ -88,14 +88,16 @@ class PcsCluster:
         self.name = cfg.name
         self.hosts = [PcsHost(host) for host in cfg.hosts] if cfg.hosts else []
         self.stoniths = [PcsStonith(stonith) for stonith in cfg.stoniths] if cfg.stoniths else []
+        self.resources = [PcsResource(res) for res in cfg.resources]
+        self.groups = [PcsGroup(grp) for grp in cfg.groups]
+        self.enable_stonith = True if cfg.stonith_enabled is None else cfg.stonith_enabled
+        print(f'stonith enable = {self.enable_stonith}, {cfg.stonith_enabled}')
+
         if len(self.stoniths) == 2:
             # for a two node topology, the first node is selected as the
             # primary one. the primary node can delay the other node when
             # doing stonith.
             self.stoniths[0].set_primary()
-        self.resources = [PcsResource(res) for res in cfg.resources]
-        self.groups = [PcsGroup(grp) for grp in cfg.groups]
-        self.enable_stonith = cfg.stonith_enabled if cfg.stonith_enabled else True
 
     def create(self, agent):
         for host in self.hosts:
