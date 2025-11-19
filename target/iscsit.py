@@ -97,7 +97,7 @@ class IscsitTarget:
         agent.execute('iscsit_iqn_destroy', self.iqn)
 
 
-class IscsitTopology:
+class IscsitNode:
     def __init__(self, cfg):
         cfg = ConfigItem(cfg)
         self.targets = [IscsitTarget(tgt, cfg.hostid) for tgt in cfg.targets]
@@ -117,7 +117,7 @@ class IscsitTopology:
 
 
 def build(config):
-    topology = IscsitTopology(config)
+    topology = IscsitNode(config)
     agents = ConfigAgent.from_config(config['agents'])
     return agents, topology
 

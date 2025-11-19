@@ -6,10 +6,8 @@ from tgtconfig import ConfigAgent, ConfigItem
 
 
 class PcsHost:
-    def __init__(self, cfg):
-        self.setup(ConfigItem(cfg))
-
-    def setup(self, cfg):
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
         self.name = cfg.name
         self.authaddr = cfg.authaddr
         self.authuser = cfg.authuser
@@ -25,15 +23,13 @@ class PcsHost:
 
 
 class PcsStonith:
-    def __init__(self, cfg):
-        self.setup(ConfigItem(cfg))
-        self.isprimary = False
-
-    def setup(self, cfg):
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
         self.name = cfg.name
         self.ipmiaddr = cfg.ipmiaddr
         self.ipmiuser = cfg.ipmiuser
         self.ipmipasswd = cfg.ipmipasswd
+        self.isprimary = False
 
     def set_primary(self):
         self.isprimary = True
@@ -57,10 +53,8 @@ class PcsStonith:
 
 
 class PcsResource:
-    def __init__(self, cfg):
-        self.setup(ConfigItem(cfg))
-
-    def setup(self, cfg):
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
         self.name = cfg.name
         self.ra = cfg.ra
         self.params = [f'{k}={v}' for k, v in cfg.params.items()]
@@ -70,10 +64,8 @@ class PcsResource:
 
 
 class PcsGroup:
-    def __init__(self, cfg):
-        self.setup(ConfigItem(cfg))
-
-    def setup(self, cfg):
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
         self.name = cfg.name
         self.locations = cfg.locations
         self.predecessor = cfg.predecessor
@@ -91,11 +83,8 @@ class PcsGroup:
 
 
 class PcsCluster:
-    def __init__(self, cfg):
-        self.setup(ConfigItem(cfg))
-
-
-    def setup(self, cfg):
+    def __init__(self, cfgdata):
+        cfg = ConfigItem(cfgdata)
         self.name = cfg.name
         self.hosts = [PcsHost(host) for host in cfg.hosts] if cfg.hosts else []
         self.stoniths = [PcsStonith(stonith) for stonith in cfg.stoniths] if cfg.stoniths else []
